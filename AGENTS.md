@@ -35,7 +35,8 @@ user's GitHub account.
 | "PR 42" while you are inside a clone of the target repo | `42` (`--repo` is inferred) |
 | a subset of angles ("just check naming and docs") | `--rubrics naming,documentation` |
 | "quick" or "cheap" | add `--no-mathlib`, and possibly a single rubric. That is fine for `naming`, `documentation`, `proof-quality`, `attribution` and `correctness`. Keep Mathlib (omit `--no-mathlib`) when `reuse` runs, because finding duplicates relies on grepping it. |
-| "post it", "publish", "leave a review on the PR" | `--post`, after a dry run, see step 5 |
+| "what's wrong with it", "is it ready to merge", "full review", "list all problems" | add `--no-halt`. Without it, the run stops at the first rubric that blocks, and the rest never run |
+| "post it", "publish", "leave a review on the PR" | `--post`, see step 5 |
 | "keep a running scoreboard", "update the review after my fixes" | `--mode scoreboard` |
 | "use Claude only" / "use Codex" | `--reviewer claude` / `--reviewer codex` |
 
@@ -61,7 +62,9 @@ whole line fail), and act on the result:
 You need at least one working reviewer CLI. Version checks don't prove the CLI is logged in. The
 first real run does.
 
-## Step 3: run a dry run
+## Step 3: run it
+
+Run without `--post` (a dry run) unless the user's request already asked to publish; see step 5.
 
 If `lean-review` is installed:
 
@@ -106,8 +109,12 @@ uvx --from git+https://github.com/felixpernegger/lean-review lean-review N --rep
 | 3 | No rubric produced a verdict. Nothing was posted. | Read the `no verdict:` lines in `progress.log`. |
 
 **progress.log (stderr)**:
-- one `reviewing OWNER/NAME#N @ <sha> — mode …, reviewers …` header line, then
-  `fetching OWNER/NAME @ <sha>…` (and `fetching Mathlib source @ <rev>…` unless `--no-mathlib`)
+- one `reviewing OWNER/NAME#N @ <sha> — mode …, reviewers …` header line. It lists the
+  reviewers *available* to this run; each rubric uses one of them, so a listed reviewer may never
+  be tried. Every run starts fresh, so a reviewer dropped in an earlier run is listed again.
+- `fetching OWNER/NAME @ <sha>…`, then `fetching Mathlib source @ <rev>…` when Mathlib is used.
+  It is not used with `--no-mathlib`, when the project's config sets `mathlib = false`, or when
+  the base `lake-manifest.json` pins no Mathlib (which prints a `note:` line instead).
 - per rubric, `[rubric] reviewing with <cli>…`, then `[rubric] <cli>/<model> → <verdict> (<s>)`.
   `<verdict>` is `approve`, `request_changes`, `block`, or `error`, where `error` means that
   attempt produced no verdict.
@@ -153,12 +160,22 @@ the run automatically. Their rubric goes to another installed reviewer.
    If a rubric approved with no findings, say so. If progress.log shows a reviewer was dropped,
    say which one and why, because the verdicts then come from the remaining reviewer only. Don't
    paste the hidden meta line.
-2. If they want it published, first tell them which account it will appear under (the one
-   `gh auth status` showed). If that account might not be theirs, for instance because it differs
-   from the git user name, ask before posting. Then rerun the same command with `--post`. The review is regenerated,
-   and verdicts on borderline points may differ slightly. Posting happens under the account
-   `gh auth status` shows.
-3. Verify the post:
+2. **If the headline says `halted at a block`**, the rubrics after the blocking one never ran.
+   Say so plainly: the PR is not ready to merge, and the list of problems is incomplete. If the
+   user wants everything that is wrong, run again with `--no-halt` (step 1). A clean `approved`
+   headline with no halt means every requested rubric ran.
+3. **Posting.**
+   - **When the user asked to post in the original request** (e.g. "post it if it finds
+     problems"), one run with `--post` is enough. It prints the same review it posts, so a
+     separate dry run would only spend quota and produce a slightly different text.
+   - **When the user asks to post after seeing a dry run,** run the same command again with
+     `--post`. The review is regenerated, and wording or borderline verdicts can differ from the
+     dry run. Report what was actually posted, from the new output.
+   - **The account.** Posts appear under the account `gh auth status` showed. A git user name that
+     differs from the GitHub login is normal and is no reason to stop. Name the account in your
+     report. Ask before posting only if you have a concrete reason to think the account belongs
+     to someone other than the user.
+4. Verify the post:
    - core mode: `gh api repos/OWNER/NAME/pulls/N/reviews -q '.[-1].html_url'`
    - scoreboard mode: `gh api repos/OWNER/NAME/issues/N/comments -q '.[] | select(.body | contains("lean-review:scoreboard")) | .html_url'`
 
