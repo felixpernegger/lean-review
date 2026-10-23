@@ -39,7 +39,12 @@ def parse_args(argv):
                          help="run every rubric even after one blocks (default in core mode)")
     ap.add_argument("--rerun-all", action="store_true",
                     help="scoreboard mode: re-run every rubric, including ones green at this head")
-    ap.add_argument("--post", action="store_true", help="publish to the PR as your gh login")
+    posting = ap.add_mutually_exclusive_group()
+    posting.add_argument("--post", action="store_true", help="publish to the PR as your gh login")
+    posting.add_argument("--post-unless-approved", action="store_true",
+                         help="core mode: publish only if some rubric did not approve")
+    ap.add_argument("--repost", action="store_true",
+                    help="core mode: post even if you already posted a review of this head")
     ap.add_argument("--keep", action="store_true", help="keep the temporary workspace")
     return ap.parse_args(argv)
 
@@ -131,9 +136,33 @@ def publish_scoreboard(cfg, ws, state_map, ran, contested, overall, board_id):
             post.reply_in_thread(ws.repo, ws.pr, root, render.render_contest_reply(cf, ws.head),
                                  failures)
     body = render.render_scoreboard(cfg.rubrics, state_map, ws, overall, state.compact(state_map))
-    if not post.upsert_scoreboard(ws.repo, ws.pr, body, board_id, me, failures):
+    board_id = post.upsert_scoreboard(ws.repo, ws.pr, body, board_id, me, failures)
+    if not board_id:
         failures.append("scoreboard")
-    return failures
+    return failures, board_id
+
+
+def publish_core(a, repo, ws, body, comments, overall):
+    """Post the core review if asked to. Returns whether anything was posted."""
+    if not (a.post or a.post_unless_approved):
+        return False
+    if a.post_unless_approved and overall == "approved":
+        print("\nevery rubric approved; nothing posted (--post-unless-approved)", file=sys.stderr)
+        return False
+    me = post.current_login()
+    if not me:
+        die("could not determine your GitHub login (`gh auth status`)")
+    prior = None if a.repost else post.find_own_review(repo, a.pr, ws.head, me)
+    if prior is not None:
+        print(f"\nnot posted: {me} already posted a lean-review review of this head: {prior} "
+              "(pass --repost to post another)", file=sys.stderr)
+        return False
+    resp = post.post_review(repo, a.pr, ws.head, body, comments, [])
+    if resp is None:
+        die("posting the review failed")
+    print(f"\nposted the review to {repo}#{a.pr} as {me}: {resp.get('html_url', '')}",
+          file=sys.stderr)
+    return True
 
 
 def main(argv=None):
@@ -164,6 +193,8 @@ def main(argv=None):
         except (RuntimeError, ValueError, KeyError) as e:
             die(f"could not read PR #{a.pr} of {repo}: {e}")
         cfg = load_config(a, repo, base)
+        if (a.post_unless_approved or a.repost) and cfg.mode == "scoreboard":
+            die("--post-unless-approved and --repost apply to core mode only")
         print(f"reviewing {repo}#{a.pr} @ {head[:12]} — mode {cfg.mode}, reviewers "
               f"{', '.join(providers)}", file=sys.stderr)
         try:
@@ -215,25 +246,25 @@ def main(argv=None):
             print(body)
             for c in comments:
                 print(f"\n--- inline {c['path']}:{c['line']}\n{c['body']}")
-            if a.post:
-                failures = []
-                if post.post_review(repo, a.pr, ws.head, body, comments, failures) is None:
-                    die("posting the review failed")
-                print(f"\nposted the review to {repo}#{a.pr}", file=sys.stderr)
+            posted = publish_core(a, repo, ws, body, comments, overall)
         else:
             print(render.render_scoreboard(cfg.rubrics, state_map, ws, overall, {}))
             for r in cfg.rubrics:
                 cf = state_map.get(r)
                 if cf and posts_review_thread(state_of(cf, ws.head)):
                     print("\n---\n" + render.render_thread(cf, ws))
+            posted = a.post
             if a.post:
-                failures = publish_scoreboard(cfg, ws, state_map, ran, contested, overall, board_id)
+                failures, board_id = publish_scoreboard(cfg, ws, state_map, ran, contested,
+                                                        overall, board_id)
                 if failures:
                     die("publication incomplete: " + ", ".join(failures))
-                print(f"\nposted the scoreboard to {repo}#{a.pr}", file=sys.stderr)
+                print(f"\nposted the scoreboard to {repo}#{a.pr}: "
+                      f"https://github.com/{repo}/pull/{a.pr}#issuecomment-{board_id}",
+                      file=sys.stderr)
             elif not ran:
                 print("\nnothing to re-run at this head", file=sys.stderr)
-        if not a.post:
+        if not posted and not (a.post or a.post_unless_approved):
             print("\n(dry run: nothing posted; pass --post to publish)", file=sys.stderr)
         return 0
     finally:

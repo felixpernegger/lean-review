@@ -3,7 +3,7 @@ the reviewers never see this credential."""
 
 import json, os, random, subprocess, sys, tempfile, time
 
-from .render import BOARD_MARKER
+from .render import BOARD_MARKER, META_RE, REVIEW_MARKER
 
 
 def gh_api(method, endpoint, payload=None, failures=None, action=""):
@@ -81,6 +81,22 @@ def post_review(repo, pr, head, body, comments, failures):
                       {**payload, "body": body + extra, "comments": []}, failures,
                       "review POST (no inline)")
     return resp
+
+
+def find_own_review(repo, pr, head, me):
+    """The URL of the newest lean-review review `me` already posted for exactly `head`, or None."""
+    for r in reversed(gh_paginate(f"/repos/{repo}/pulls/{pr}/reviews?per_page=100") or []):
+        body = r.get("body") or ""
+        if (r.get("user") or {}).get("login") != me or REVIEW_MARKER not in body:
+            continue
+        metas = META_RE.findall(body)
+        try:
+            meta = json.loads(metas[-1]) if metas else {}
+        except ValueError:
+            continue
+        if meta.get("head_sha") == head:
+            return r.get("html_url") or ""
+    return None
 
 
 def upsert_scoreboard(repo, pr, body, board_id, me, failures):

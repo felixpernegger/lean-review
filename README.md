@@ -90,7 +90,9 @@ Rubric names for `--rubrics`: `correctness`, `reuse`, `attribution`, `api-design
 
 | flag | effect |
 |---|---|
-| `--post` | publish to the PR under your GitHub login |
+| `--post` | publish to the PR under your GitHub login; the URL is printed |
+| `--post-unless-approved` | core mode: publish only if some rubric did not approve (for "post it if it finds problems") |
+| `--repost` | core mode: post even though you already posted a review of this exact commit (by default a second post is skipped) |
 | `--mode core\|scoreboard` | output style (see below); default from config, else `core` |
 | `--rubrics a,b` | run only these rubrics, in this order |
 | `--reviewer claude,codex,kiro` | restrict the reviewers. By default each rubric is given to one reviewer drawn at random from the installed `claude` and `codex`; the progress line shows which. Pass e.g. `--reviewer claude` for a single one |

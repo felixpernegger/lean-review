@@ -37,3 +37,21 @@ def test_pick_providers(monkeypatch):
         cli.pick_providers("codex")
     with pytest.raises(SystemExit):
         cli.pick_providers("deepseek")
+
+
+def test_publish_core_conditions(monkeypatch, ws):
+    from lean_review import post
+    calls = []
+    monkeypatch.setattr(post, "current_login", lambda: "me")
+    monkeypatch.setattr(post, "post_review", lambda *a: calls.append(a) or {"html_url": "u"})
+    monkeypatch.setattr(post, "find_own_review", lambda *a: None)
+    args = lambda *argv: cli.parse_args(["7", *argv])
+    assert cli.publish_core(args(), "o/r", ws, "B", [], "blocked") is False            # dry run
+    assert cli.publish_core(args("--post-unless-approved"), "o/r", ws, "B", [], "approved") is False
+    assert cli.publish_core(args("--post-unless-approved"), "o/r", ws, "B", [], "blocked") is True
+    monkeypatch.setattr(post, "find_own_review", lambda *a: "u-earlier")
+    assert cli.publish_core(args("--post"), "o/r", ws, "B", [], "blocked") is False   # duplicate
+    assert cli.publish_core(args("--post", "--repost"), "o/r", ws, "B", [], "blocked") is True
+    assert len(calls) == 2
+    with pytest.raises(SystemExit):
+        args("--post", "--post-unless-approved")

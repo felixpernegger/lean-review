@@ -26,6 +26,9 @@ user's GitHub account.
    re-run full reviews in a loop. Use `--rubrics` for quick checks.
 5. **Don't modify the target repository.** No commits, no `.lean-review.toml`, no comments, unless
    the user asks.
+6. **When this file says "ask" but no human can answer,** take the cautious option: don't post,
+   don't install, don't update. Follow an explicit instruction in the request, and report what you
+   would have asked.
 
 ## Step 1: translate the request into arguments
 
@@ -38,6 +41,7 @@ user's GitHub account.
 | "what's wrong with it", "is it ready to merge", "full review", "list all problems" | nothing extra in core mode, which runs every rubric. In scoreboard mode add `--no-halt`, since it otherwise stops at the first rubric that blocks |
 | "stop at the first blocker", "save quota" | `--halt` |
 | "post it", "publish", "leave a review on the PR" | `--post`, see step 5 |
+| "post it **if** it finds problems", "only post if it isn't clean" | `--post-unless-approved` (core mode): one run that posts only when some rubric did not approve |
 | "keep a running scoreboard", "update the review after my fixes" | `--mode scoreboard` |
 | "use Claude only" / "use Codex" | `--reviewer claude` / `--reviewer codex` |
 
@@ -65,7 +69,8 @@ first real run does.
 
 ## Step 3: run it
 
-Run without `--post` (a dry run) unless the user's request already asked to publish; see step 5.
+Run without a posting flag (a dry run) unless the user's request already asked to publish; see
+step 5.
 
 If `lean-review` is installed:
 
@@ -86,15 +91,18 @@ uvx --from git+https://github.com/felixpernegger/lean-review lean-review N --rep
   your choice, not inside the user's repositories.
 - **Time limits.** A single rubric takes 10–60 s, and all nine take a few minutes, plus the
   Mathlib download. If your shell tool allows a timeout of at least 30 minutes, run in the
-  foreground with that timeout. If its maximum is shorter, start it in the background so the
-  exit status is written to a file even when the run fails:
+  foreground with that timeout. If its maximum is shorter, run it in the background, so that
+  the exit status is written to a file even when the run fails:
 
   ```bash
-  ( lean-review N --repo OWNER/NAME … > review.md 2> progress.log; echo $? > exit.txt ) &
+  ( lean-review N --repo OWNER/NAME … > review.md 2> progress.log; echo $? > exit.txt )
   ```
 
-  Then wait until `exit.txt` exists, using your tool's wait or monitor feature, or a polling loop
-  if long sleeps are blocked. The tool never prompts for input.
+  Prefer your shell tool's own background option for this command. If you append `&` instead,
+  the tool reports the command finished immediately, with exit 0, while lean-review is still
+  running. Either way, **only `exit.txt` tells you the run is over and how it ended.** Wait until
+  it exists, with your tool's wait or monitor feature or a polling loop if long sleeps are
+  blocked. A full nine-rubric run can take 5–15 minutes. The tool never prompts for input.
 - **Run from anywhere.** You don't need a clone unless you rely on `--repo` being inferred.
 - **No leftovers.** Everything goes into a temporary directory that is deleted afterwards
   (`--keep` keeps it). Nothing needs cleaning up.
@@ -115,7 +123,9 @@ uvx --from git+https://github.com/felixpernegger/lean-review lean-review N --rep
   be tried. Every run starts fresh, so a reviewer dropped in an earlier run is listed again.
 - `fetching OWNER/NAME @ <sha>…`, then `fetching Mathlib source @ <rev>…` when Mathlib is used.
   It is not used with `--no-mathlib`, when the project's config sets `mathlib = false`, or when
-  the base `lake-manifest.json` pins no Mathlib (which prints a `note:` line instead).
+  the base `lake-manifest.json` pins no Mathlib (which prints a `note:` line instead). **No
+  `fetching Mathlib` line means Mathlib was not used**, so `reuse` and `naming` could not grep it.
+  Mention this when those rubrics ran.
 - per rubric, `[rubric] reviewing with <cli>…`, then `[rubric] <cli>/<model> → <verdict> (<s>)`.
   `<verdict>` is `approve`, `request_changes`, `block`, or `error`, where `error` means that
   attempt produced no verdict.
@@ -124,8 +134,15 @@ uvx --from git+https://github.com/felixpernegger/lean-review lean-review N --rep
   with another reviewer, which prints its own `reviewing with` line. Only the last line for a
   rubric is its result.
 - when run through `uvx`, uv's build lines come first
-- at the end, `(dry run: nothing posted; pass --post to publish)` without `--post`, or
-  `posted the review to OWNER/NAME#N` with it
+- at the end, exactly one of:
+  - `(dry run: nothing posted; pass --post to publish)`: no posting flag was given
+  - `posted the review to OWNER/NAME#N as <login>: <url>`: posted (scoreboard mode: `posted the
+    scoreboard to …: <url>`)
+  - `every rubric approved; nothing posted (--post-unless-approved)`
+  - `not posted: <login> already posted a lean-review review of this head: <url> …`: a review of
+    this exact commit by the same account already exists, for example from an earlier or
+    concurrent run. That is a success; report the existing URL. Pass `--repost` only if the user
+    wants a second copy.
 
 **review.md (stdout), core mode:**
 - A first line `<!--lean-review:review-->`: a hidden marker, ignore it.
@@ -164,12 +181,13 @@ the run automatically. Their rubric goes to another installed reviewer.
 2. **If the headline says `halted at a block`**, the rubrics after the blocking one never ran.
    Say so plainly: the PR is not ready to merge, and the list of problems is incomplete. If the
    user wants everything that is wrong, run again with `--no-halt`. A halt happens by default
-   only in scoreboard mode, or when `--halt` was passed. A clean `approved`
-   headline with no halt means every requested rubric ran.
+   only in scoreboard mode, or when `--halt` was passed. Any headline without `(halted …)`,
+   including `blocked`, means every requested rubric ran.
 3. **Posting.**
-   - **When the user asked to post in the original request** (e.g. "post it if it finds
-     problems"), one run with `--post` is enough. It prints the same review it posts, so a
-     separate dry run would only spend quota and produce a slightly different text.
+   - **When the user asked to post in the original request,** one run is enough: `--post`, or
+     `--post-unless-approved` when posting depends on the result ("post it if it finds
+     problems"). The run prints the same review it posts, so a separate dry run would only spend
+     quota and produce a slightly different text.
    - **When the user asks to post after seeing a dry run,** run the same command again with
      `--post`. The review is regenerated, and wording or borderline verdicts can differ from the
      dry run. Report what was actually posted, from the new output.
@@ -177,9 +195,9 @@ the run automatically. Their rubric goes to another installed reviewer.
      differs from the GitHub login is normal and is no reason to stop. Name the account in your
      report. Ask before posting only if you have a concrete reason to think the account belongs
      to someone other than the user.
-4. Verify the post:
-   - core mode: `gh api repos/OWNER/NAME/pulls/N/reviews -q '.[-1].html_url'`
-   - scoreboard mode: `gh api repos/OWNER/NAME/issues/N/comments -q '.[] | select(.body | contains("lean-review:scoreboard")) | .html_url'`
+4. **Report the URL** from the `posted …` (or `not posted: … already posted …`) line in
+   progress.log. That line is the confirmation; no separate check is needed. Other people's
+   reviews on the PR do not affect it.
 
 ## Scoreboard mode
 

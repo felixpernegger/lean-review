@@ -46,3 +46,17 @@ def test_review_falls_back_without_inline(monkeypatch):
     assert resp == {"id": 99, "html_url": "u"} and failures == []
     assert gh.calls[0][2]["comments"] and gh.calls[0][2]["event"] == "COMMENT"
     assert gh.calls[1][2]["comments"] == [] and "`p:3` — c" in gh.calls[1][2]["body"]
+
+
+def test_find_own_review_matches_head_and_author(monkeypatch):
+    from lean_review.render import REVIEW_MARKER, meta_block
+    def review(login, head, url):
+        return {"user": {"login": login}, "html_url": url,
+                "body": f"{REVIEW_MARKER}\nbody\n{meta_block(kind='review', head_sha=head)}"}
+    reviews = [review("me", "old", "u-old"), review("me", "h", "u-mine"),
+               review("mallory", "h", "u-foreign"),
+               {"user": {"login": "me"}, "html_url": "u-plain", "body": "a human review"}]
+    monkeypatch.setattr(post, "gh_paginate", lambda e: reviews)
+    assert post.find_own_review("o/r", 1, "h", "me") == "u-mine"
+    assert post.find_own_review("o/r", 1, "new", "me") is None
+    assert post.find_own_review("o/r", 1, "h", "nobody") is None
