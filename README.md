@@ -245,6 +245,6 @@ uv run --with pytest python -m pytest -q
 
 ## Credits
 
-lean-review grew out of [TauCetiReview](https://github.com/TauCetiProject/TauCetiReview), the
+lean-review grew out of [TauCetiReview](https://github.com/TauCetiProject/TauCetiReview) by @kim-em, the
 review engine of the Tau Ceti project, and keeps its rubrics and its security design. It was
 inspired by [botbaki](https://github.com/kim-em/botbaki). Apache-2.0.
