@@ -82,9 +82,15 @@ uvx --from git+https://github.com/felixpernegger/lean-review lean-review N --rep
   your choice, not inside the user's repositories.
 - **Time limits.** A single rubric takes 10–60 s, and all nine take a few minutes, plus the
   Mathlib download. If your shell tool allows a timeout of at least 30 minutes, run in the
-  foreground with that timeout. If its maximum is shorter, run the command in the background, append `; echo $? > exit.txt`, and wait
-  until `exit.txt` exists, by polling in a loop if your tool blocks long sleeps. The tool never
-  prompts for input.
+  foreground with that timeout. If its maximum is shorter, start it in the background so the
+  exit status is written to a file even when the run fails:
+
+  ```bash
+  ( lean-review N --repo OWNER/NAME … > review.md 2> progress.log; echo $? > exit.txt ) &
+  ```
+
+  Then wait until `exit.txt` exists, using your tool's wait or monitor feature, or a polling loop
+  if long sleeps are blocked. The tool never prompts for input.
 - **Run from anywhere.** You don't need a clone unless you rely on `--repo` being inferred.
 - **No leftovers.** Everything goes into a temporary directory that is deleted afterwards
   (`--keep` keeps it). Nothing needs cleaning up.
@@ -100,7 +106,8 @@ uvx --from git+https://github.com/felixpernegger/lean-review lean-review N --rep
 | 3 | No rubric produced a verdict. Nothing was posted. | Read the `no verdict:` lines in `progress.log`. |
 
 **progress.log (stderr)**:
-- one `reviewing OWNER/NAME#N @ <sha> — mode …, reviewers …` header line
+- one `reviewing OWNER/NAME#N @ <sha> — mode …, reviewers …` header line, then
+  `fetching OWNER/NAME @ <sha>…` (and `fetching Mathlib source @ <rev>…` unless `--no-mathlib`)
 - per rubric, `[rubric] reviewing with <cli>…`, then `[rubric] <cli>/<model> → <verdict> (<s>)`.
   `<verdict>` is `approve`, `request_changes`, `block`, or `error`, where `error` means that
   attempt produced no verdict.
@@ -109,6 +116,8 @@ uvx --from git+https://github.com/felixpernegger/lean-review lean-review N --rep
   with another reviewer, which prints its own `reviewing with` line. Only the last line for a
   rubric is its result.
 - when run through `uvx`, uv's build lines come first
+- at the end, `(dry run: nothing posted; pass --post to publish)` without `--post`, or
+  `posted the review to OWNER/NAME#N` with it
 
 **review.md (stdout), core mode:**
 - A first line `<!--lean-review:review-->`: a hidden marker, ignore it.
