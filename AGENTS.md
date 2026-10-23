@@ -34,7 +34,7 @@ user's GitHub account.
 | a PR URL `https://github.com/OWNER/NAME/pull/N` | `N --repo OWNER/NAME` |
 | "PR 42" while you are inside a clone of the target repo | `42` (`--repo` is inferred) |
 | a subset of angles ("just check naming and docs") | `--rubrics naming,documentation` |
-| "quick" or "cheap" | add `--no-mathlib`, and possibly a single rubric |
+| "quick" or "cheap" | add `--no-mathlib`, and possibly a single rubric. That is fine for `naming`, `documentation`, `proof-quality`, `attribution` and `correctness`. Keep Mathlib (omit `--no-mathlib`) when `reuse` runs, because finding duplicates relies on grepping it. |
 | "post it", "publish", "leave a review on the PR" | `--post`, after a dry run, see step 5 |
 | "keep a running scoreboard", "update the review after my fixes" | `--mode scoreboard` |
 | "use Claude only" / "use Codex" | `--reviewer claude` / `--reviewer codex` |
@@ -45,16 +45,18 @@ the project's rubrics run in that order.
 
 ## Step 2: preflight
 
-Run these checks and act on the result:
+Run each check as its own command, not chained with `&&` (an absent optional tool would make the
+whole line fail), and act on the result:
 
 | Check | Expected | If not |
 |---|---|---|
 | `python3 --version` | ≥ 3.11 | Ask the user to install a newer Python. |
-| `gh auth status` | logged in to an account that can read the repo | Ask the user to run `gh auth login`. |
-| `command -v claude && claude --version` | ≥ 2.1.280 | Ask the user to run `claude update`, or to install Claude Code. If several are installed, `which -a claude` shows them; the first on PATH is used. |
-| `command -v codex && codex --version` | optional; a current release | Missing is fine if `claude` works. An old codex will be dropped automatically, but tell the user. |
+| `gh auth status` | logged in | Ask the user to run `gh auth login`. Note the account name: posts appear under it. |
+| `gh repo view OWNER/NAME --json name` | succeeds | The account cannot see the repository. Check the name, or ask the user. |
+| `command -v claude`, then `claude --version` | ≥ 2.1.280 | Ask the user to run `claude update`, or to install Claude Code. Only the first path that `command -v claude` prints is used; others listed by `which -a claude` don't matter. |
+| `command -v codex` | optional | Missing is fine if `claude` works. Its version can't be checked reliably (`codex --version` may print nothing), so don't gate on it. An outdated codex, or one whose plan lacks the model, is detected and dropped during the run, and the rubric goes to claude. Mention it to the user. |
 | `command -v lean-review` | found | Use the `uvx` form below, or ask before `uv tool install …`. |
-| `command -v uv` or `command -v pipx` | one of them | Needed only if `lean-review` is not installed. |
+| `command -v uv`, `command -v pipx` | at least one | Needed only if `lean-review` is not installed. pipx is not needed when uv is present. |
 
 You need at least one working reviewer CLI. Version checks don't prove the CLI is logged in. The
 first real run does.
@@ -67,15 +69,22 @@ If `lean-review` is installed:
 lean-review N --repo OWNER/NAME [--rubrics …] [--no-mathlib] > review.md 2> progress.log
 ```
 
-Without installing, put the `uvx` prefix in front:
+Without installing, put the `uvx` prefix in front. This does **not** count as installing: it adds
+nothing to PATH and changes no configuration. uv only keeps a cached copy of the package in its
+own cache directory (`uv cache dir`), so it is the right choice when the user doesn't want
+software installed:
 
 ```bash
 uvx --from git+https://github.com/felixpernegger/lean-review lean-review N --repo OWNER/NAME … > review.md 2> progress.log
 ```
 
+- **Where to write.** Put `review.md` and `progress.log` in a scratch or temporary directory of
+  your choice, not inside the user's repositories.
 - **Time limits.** A single rubric takes 10–60 s, and all nine take a few minutes, plus the
   Mathlib download. If your shell tool has a short default timeout, raise it to at least 30
-  minutes or run the command in the background. The tool never prompts for input.
+  minutes. Otherwise run the command in the background, append `; echo $? > exit.txt`, and wait
+  until `exit.txt` exists, by polling in a loop if your tool blocks long sleeps. The tool never
+  prompts for input.
 - **Run from anywhere.** You don't need a clone unless you rely on `--repo` being inferred.
 - **No leftovers.** Everything goes into a temporary directory that is deleted afterwards
   (`--keep` keeps it). Nothing needs cleaning up.
@@ -92,18 +101,25 @@ uvx --from git+https://github.com/felixpernegger/lean-review lean-review N --rep
 
 **progress.log (stderr)**:
 - one `reviewing OWNER/NAME#N @ <sha> — mode …, reviewers …` header line
-- per rubric, `[rubric] reviewing with <cli>…`, then `[rubric] <cli>/<model> → <verdict> (<s>)`
-- on failure, `[rubric]   no verdict: <kind> — <the CLI's own message>`
+- per rubric, `[rubric] reviewing with <cli>…`, then `[rubric] <cli>/<model> → <verdict> (<s>)`.
+  `<verdict>` is `approve`, `request_changes`, `block`, or `error`, where `error` means that
+  attempt produced no verdict.
+- after an `error`, `[rubric]   no verdict: <kind> — <the CLI's own message>`. If the reviewer was
+  unusable, a `dropping <cli> for the rest of this run` line follows, and the rubric is retried
+  with another reviewer, which prints its own `reviewing with` line. Only the last line for a
+  rubric is its result.
 - when run through `uvx`, uv's build lines come first
 
 **review.md (stdout), core mode:**
+- A first line `<!--lean-review:review-->`: a hidden marker, ignore it.
 - A headline `## lean-review — <overall>`, where `<overall>` is one of `approved`, `changes
   requested`, `blocked`, `pending`, `re-review pending` or `partial`. If a block stopped the run early, it says so: `(halted
   at a block; X and later not run)`.
 - A table with one row per rubric: icon, rubric, verdict, reviewer, one-paragraph summary.
 - Optionally `### Findings outside the diff`, one bullet per finding.
 - One `--- inline path:line` block per finding that will be attached to a changed line.
-- A hidden `<!--lean-review:meta …-->` line. Ignore it.
+- A `<sub>Reviewed head … · diff · lean-review <version></sub>` footer, followed by a hidden
+  `<!--lean-review:meta …-->` line. The footer is for readers; ignore the meta line.
 
 **review.md, scoreboard mode:** the scoreboard, then `---` and one thread body per blocking
 rubric.
@@ -114,7 +130,7 @@ rubric.
 |---|---|---|
 | `cli_outdated` | the CLI is too old for the model | Ask the user to update it (`claude update`, or reinstall codex). |
 | `not_authenticated` | the CLI is logged out | Ask the user to log in (`claude`, then `/login`; or `codex login`). |
-| `model_unavailable` | the plan cannot use the default model | Retry with `--claude-model …` or `--codex-model …` for a model the user has. |
+| `model_unavailable` | the plan cannot use the default model (`claude-opus-5-5`, `gpt-6.1-sol` or `gpt-5.6-sol` for Kiro) | lean-review can't list a plan's models. If another reviewer covered the rubric, nothing is needed. Otherwise use `--reviewer` to pick one that works, or ask the user which model their plan offers and pass `--claude-model …` / `--codex-model …`. |
 | `quota_exhausted`, `rate_limited` | the subscription limit was hit | Wait, or use `--reviewer` to switch to another installed CLI. |
 | `no_verdict`, `unknown_error` | the reviewer answered without the required verdict | Retry that rubric once with `--rubrics <name>`. |
 
@@ -125,7 +141,8 @@ the run automatically. Their rubric goes to another installed reviewer.
 
 1. Give the user the headline, each rubric's verdict, and the findings, including file and line.
    Don't paste the hidden meta line.
-2. If they want it published, rerun the same command with `--post`. The review is regenerated,
+2. If they want it published, first tell them which account it will appear under (the one
+   `gh auth status` showed). Then rerun the same command with `--post`. The review is regenerated,
    and verdicts on borderline points may differ slightly. Posting happens under the account
    `gh auth status` shows.
 3. Verify the post:
