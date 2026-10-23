@@ -1,7 +1,7 @@
 # AGENTS.md
 
 Instructions for AI agents. Part A is for running lean-review on a user's behalf. Part B is for
-changing this repository. [README.md](README.md) has the full flag table and configuration
+changing this repository. [README.md](https://github.com/felixpernegger/lean-review/blob/main/README.md) has the full flag table and configuration
 reference.
 
 ---
@@ -56,7 +56,7 @@ whole line fail), and act on the result:
 | `command -v claude`, then `claude --version` | ≥ 2.1.280 | Ask the user to run `claude update`, or to install Claude Code. Only the first path that `command -v claude` prints is used; others listed by `which -a claude` don't matter. |
 | `command -v codex` | optional | Missing is fine if `claude` works. Its version can't be checked reliably (`codex --version` may print nothing), so don't gate on it. An outdated codex, or one whose plan lacks the model, is detected and dropped during the run, and the rubric goes to claude. Mention it to the user. |
 | `command -v lean-review` | found | Use the `uvx` form below, or ask before `uv tool install …`. |
-| `command -v uv`, `command -v pipx` | at least one | Needed only if `lean-review` is not installed. pipx is not needed when uv is present. |
+| `command -v uv` (then `command -v pipx` only if uv is missing) | one of them | Needed only if `lean-review` is not installed. |
 
 You need at least one working reviewer CLI. Version checks don't prove the CLI is logged in. The
 first real run does.
@@ -81,8 +81,8 @@ uvx --from git+https://github.com/felixpernegger/lean-review lean-review N --rep
 - **Where to write.** Put `review.md` and `progress.log` in a scratch or temporary directory of
   your choice, not inside the user's repositories.
 - **Time limits.** A single rubric takes 10–60 s, and all nine take a few minutes, plus the
-  Mathlib download. If your shell tool has a short default timeout, raise it to at least 30
-  minutes. Otherwise run the command in the background, append `; echo $? > exit.txt`, and wait
+  Mathlib download. If your shell tool allows a timeout of at least 30 minutes, run in the
+  foreground with that timeout. If its maximum is shorter, run the command in the background, append `; echo $? > exit.txt`, and wait
   until `exit.txt` exists, by polling in a loop if your tool blocks long sleeps. The tool never
   prompts for input.
 - **Run from anywhere.** You don't need a clone unless you rely on `--repo` being inferred.
@@ -113,7 +113,8 @@ uvx --from git+https://github.com/felixpernegger/lean-review lean-review N --rep
 **review.md (stdout), core mode:**
 - A first line `<!--lean-review:review-->`: a hidden marker, ignore it.
 - A headline `## lean-review — <overall>`, where `<overall>` is one of `approved`, `changes
-  requested`, `blocked`, `pending`, `re-review pending` or `partial`. If a block stopped the run early, it says so: `(halted
+  requested`, `blocked`, `pending` (some rubric has not run yet), `re-review pending`
+  (scoreboard mode: approvals from an earlier commit still need re-checking) or `partial`. If a block stopped the run early, it says so: `(halted
   at a block; X and later not run)`.
 - A table with one row per rubric: icon, rubric, verdict, reviewer, one-paragraph summary.
 - Optionally `### Findings outside the diff`, one bullet per finding.
@@ -130,7 +131,7 @@ rubric.
 |---|---|---|
 | `cli_outdated` | the CLI is too old for the model | Ask the user to update it (`claude update`, or reinstall codex). |
 | `not_authenticated` | the CLI is logged out | Ask the user to log in (`claude`, then `/login`; or `codex login`). |
-| `model_unavailable` | the plan cannot use the default model (`claude-opus-5-5`, `gpt-6.1-sol` or `gpt-5.6-sol` for Kiro) | lean-review can't list a plan's models. If another reviewer covered the rubric, nothing is needed. Otherwise use `--reviewer` to pick one that works, or ask the user which model their plan offers and pass `--claude-model …` / `--codex-model …`. |
+| `model_unavailable` | the plan cannot use the default model (claude: `claude-opus-5-5`; codex: `gpt-6.1-sol`; kiro: `gpt-5.6-sol`) | lean-review can't list a plan's models. If another reviewer covered the rubric, nothing is needed. Otherwise use `--reviewer` to pick one that works, or ask the user which model their plan offers and pass `--claude-model …` / `--codex-model …`. |
 | `quota_exhausted`, `rate_limited` | the subscription limit was hit | Wait, or use `--reviewer` to switch to another installed CLI. |
 | `no_verdict`, `unknown_error` | the reviewer answered without the required verdict | Retry that rubric once with `--rubrics <name>`. |
 
@@ -140,9 +141,12 @@ the run automatically. Their rubric goes to another installed reviewer.
 ## Step 5: report, then post only on request
 
 1. Give the user the headline, each rubric's verdict, and the findings, including file and line.
-   Don't paste the hidden meta line.
+   If a rubric approved with no findings, say so. If progress.log shows a reviewer was dropped,
+   say which one and why, because the verdicts then come from the remaining reviewer only. Don't
+   paste the hidden meta line.
 2. If they want it published, first tell them which account it will appear under (the one
-   `gh auth status` showed). Then rerun the same command with `--post`. The review is regenerated,
+   `gh auth status` showed). If that account might not be theirs, for instance because it differs
+   from the git user name, ask before posting. Then rerun the same command with `--post`. The review is regenerated,
    and verdicts on borderline points may differ slightly. Posting happens under the account
    `gh auth status` shows.
 3. Verify the post:
@@ -164,8 +168,8 @@ the run automatically. Their rubric goes to another installed reviewer.
 
 Configuration is read from the PR's **base** commit, so it must be committed to the target
 repo's default branch to take effect. For one run you can test it locally with
-`--config path/to/.lean-review.toml`. The format is in [README.md](README.md#configuring-a-project).
-[`examples/tauceti/`](examples/tauceti/) is a complete example.
+`--config path/to/.lean-review.toml`. The format is in [README.md](https://github.com/felixpernegger/lean-review/blob/main/README.md#configuring-a-project).
+[`examples/tauceti/`](https://github.com/felixpernegger/lean-review/blob/main/examples/tauceti/) is a complete example.
 
 ---
 
