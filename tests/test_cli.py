@@ -18,6 +18,17 @@ def test_scoreboard_queue():
     assert cli.select_scoreboard_queue(cfg, sm, H, True) == cfg.rubrics
 
 
+def test_halt_defaults_by_mode():
+    def args(*argv):
+        return cli.parse_args(["1", *argv])
+    assert cli.should_halt(args(), Config(mode="core")) is False
+    assert cli.should_halt(args(), Config(mode="scoreboard")) is True
+    assert cli.should_halt(args("--halt"), Config(mode="core")) is True
+    assert cli.should_halt(args("--no-halt"), Config(mode="scoreboard")) is False
+    with pytest.raises(SystemExit):
+        args("--halt", "--no-halt")
+
+
 def test_pick_providers(monkeypatch):
     monkeypatch.setattr(reviewers, "available", lambda: ["claude", "kiro"])
     assert cli.pick_providers(None) == ["claude"]             # kiro is never auto-drawn

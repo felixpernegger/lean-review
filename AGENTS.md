@@ -35,7 +35,8 @@ user's GitHub account.
 | "PR 42" while you are inside a clone of the target repo | `42` (`--repo` is inferred) |
 | a subset of angles ("just check naming and docs") | `--rubrics naming,documentation` |
 | "quick" or "cheap" | add `--no-mathlib`, and possibly a single rubric. That is fine for `naming`, `documentation`, `proof-quality`, `attribution` and `correctness`. Keep Mathlib (omit `--no-mathlib`) when `reuse` runs, because finding duplicates relies on grepping it. |
-| "what's wrong with it", "is it ready to merge", "full review", "list all problems" | add `--no-halt`. Without it, the run stops at the first rubric that blocks, and the rest never run |
+| "what's wrong with it", "is it ready to merge", "full review", "list all problems" | nothing extra in core mode, which runs every rubric. In scoreboard mode add `--no-halt`, since it otherwise stops at the first rubric that blocks |
+| "stop at the first blocker", "save quota" | `--halt` |
 | "post it", "publish", "leave a review on the PR" | `--post`, see step 5 |
 | "keep a running scoreboard", "update the review after my fixes" | `--mode scoreboard` |
 | "use Claude only" / "use Codex" | `--reviewer claude` / `--reviewer codex` |
@@ -162,7 +163,8 @@ the run automatically. Their rubric goes to another installed reviewer.
    paste the hidden meta line.
 2. **If the headline says `halted at a block`**, the rubrics after the blocking one never ran.
    Say so plainly: the PR is not ready to merge, and the list of problems is incomplete. If the
-   user wants everything that is wrong, run again with `--no-halt` (step 1). A clean `approved`
+   user wants everything that is wrong, run again with `--no-halt`. A halt happens by default
+   only in scoreboard mode, or when `--halt` was passed. A clean `approved`
    headline with no halt means every requested rubric ran.
 3. **Posting.**
    - **When the user asked to post in the original request** (e.g. "post it if it finds

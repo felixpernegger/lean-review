@@ -99,7 +99,7 @@ Rubric names for `--rubrics`: `correctness`, `reuse`, `attribution`, `api-design
 | `--kiro-model` | exact Kiro model id; default `gpt-5.6-sol`. `auto` is refused |
 | `--repo owner/name` | the repository; defaults to the one the current directory is a clone of |
 | `--no-mathlib` | skip fetching Mathlib source (faster; weaker `reuse`/`naming`) |
-| `--no-halt` | keep reviewing after a rubric blocks. By default a `block` stops the round |
+| `--halt` / `--no-halt` | whether a `block` stops the remaining rubrics. Default: core mode runs them all; scoreboard mode stops (a later run picks up the rest) |
 | `--rerun-all` | scoreboard mode: re-run rubrics that are already green at this head |
 | `--config PATH` | use a local `.lean-review.toml` instead of the one on the PR's base branch |
 | `--keep` | keep the temporary workspace |
@@ -147,7 +147,7 @@ Rubric names for `--rubrics`: `correctness`, `reuse`, `attribution`, `api-design
 
 - **Verdicts.** Each rubric returns `approve`, `request_changes` or `block`. The review's headline
   sums them up as `approved`, `changes requested` or `blocked`. A `block` halts the remaining
-  rubrics unless `--no-halt` is given.
+  rubrics in scoreboard mode (or with `--halt`); core mode runs every rubric by default.
 
 ## Troubleshooting
 

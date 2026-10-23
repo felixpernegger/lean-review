@@ -32,7 +32,11 @@ def parse_args(argv):
     ap.add_argument("--codex-model", default=reviewers.DEFAULT_MODELS["codex"])
     ap.add_argument("--kiro-model", default=reviewers.DEFAULT_MODELS["kiro"])
     ap.add_argument("--no-mathlib", action="store_true", help="skip the Mathlib source checkout")
-    ap.add_argument("--no-halt", action="store_true", help="keep going after a rubric blocks")
+    halting = ap.add_mutually_exclusive_group()
+    halting.add_argument("--halt", action="store_true",
+                         help="stop at the first rubric that blocks (default in scoreboard mode)")
+    halting.add_argument("--no-halt", action="store_true",
+                         help="run every rubric even after one blocks (default in core mode)")
     ap.add_argument("--rerun-all", action="store_true",
                     help="scoreboard mode: re-run every rubric, including ones green at this head")
     ap.add_argument("--post", action="store_true", help="publish to the PR as your gh login")
@@ -72,6 +76,14 @@ def load_config(a, repo, base):
     except config.ConfigError as e:
         die(str(e))
     return cfg
+
+
+def should_halt(a, cfg):
+    """Core mode is a one-off review, so it runs every rubric unless told otherwise. Scoreboard
+    mode stops at a block by default: a later run picks up the rest once the block is fixed."""
+    if a.halt or a.no_halt:
+        return a.halt
+    return cfg.mode == "scoreboard"
 
 
 def select_scoreboard_queue(cfg, state_map, head, rerun_all):
@@ -187,7 +199,7 @@ def main(argv=None):
         try:
             ran, halted = engine.run_queue(cfg, ws, queue, providers, models, state_map, context,
                                            digest=digest, version=version, replies=replies,
-                                           halt=not a.no_halt)
+                                           halt=should_halt(a, cfg))
         except engine.ProvidersDown as e:
             print(f"lean-review: {e}; nothing posted", file=sys.stderr)
             return PROVIDERS_DOWN_EXIT
