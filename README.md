@@ -12,28 +12,73 @@ differences: it uses an agentic read-only review over a checkout instead of a si
 authenticates through subscription CLIs instead of an API key, and it runs as a CLI with no
 daemon.
 
-## Prerequisites
+## Quick start
 
-- **Python** ≥ 3.11, `git`.
-- **[`gh`](https://cli.github.com/)**, logged in with `gh auth login`. It reads the PR and, with
-  `--post`, publishes as you. Private repositories work if your login can read them.
-- **At least one reviewer CLI**, logged in:
-  - [`claude`](https://www.npmjs.com/package/@anthropic-ai/claude-code) on a Claude subscription.
-  - [`codex`](https://www.npmjs.com/package/@openai/codex) on a ChatGPT subscription.
-  - `kiro-cli`, after `kiro-cli login`. Kiro is explicit-only: pass `--reviewer kiro`.
+These steps are written so that a person or an AI agent can follow them literally.
+
+**1. Check the prerequisites.** Each command should succeed:
+
+```bash
+python3 --version     # 3.11 or newer
+git --version
+gh auth status        # GitHub CLI, logged in (`gh auth login` if not)
+claude --version      # Claude Code 2.1.280 or newer, logged in to a Claude subscription
+codex --version       # optional: OpenAI Codex CLI (a current release), logged in to ChatGPT
+uv --version          # optional, for the install below
+```
+
+At least one reviewer CLI is required:
+- [`claude`](https://docs.anthropic.com/en/docs/claude-code) (update with `claude update`)
+- [`codex`](https://www.npmjs.com/package/@openai/codex)
+- `kiro-cli`, after `kiro-cli login`. Kiro is only used when you pass `--reviewer kiro`.
+
+Each CLI must be logged in once, interactively. lean-review never asks for keys or tokens. `gh`
+reads the PR and, with `--post`, publishes as you. Private repositories work if your login can
+read them.
+
+**2. Install.** With [uv](https://docs.astral.sh/uv/) (`curl -LsSf https://astral.sh/uv/install.sh | sh`):
+
+```bash
+uv tool install git+https://github.com/felixpernegger/lean-review   # puts `lean-review` on PATH
+# or run once without installing:
+uvx --from git+https://github.com/felixpernegger/lean-review lean-review --help
+# or with pipx:
+pipx install git+https://github.com/felixpernegger/lean-review
+```
+
+**3. Try a cheap dry run** (one rubric, no Mathlib download, about 30 seconds):
+
+```bash
+lean-review 13008 --repo TauCetiProject/TauCeti --rubrics proof-quality --no-mathlib
+```
+
+**4. Review a real PR.** This prints the review and posts nothing:
+
+```bash
+lean-review <PR number> --repo <owner>/<name>
+```
+
+**5. Publish it,** only once a human has read the dry-run output and agreed:
+
+```bash
+lean-review <PR number> --repo <owner>/<name> --post
+```
+
+Inside a clone of the target repository, you can omit `--repo`.
 
 ## Use
 
 ```bash
-uvx --from git+https://github.com/felixpernegger/lean-review lean-review 42 --repo owner/name
-# or: uv tool install git+https://github.com/felixpernegger/lean-review
-lean-review 42                       # inside a clone: review PR #42 and print the result
-lean-review 42 --post                # publish it to the PR as your gh login
-lean-review 42 --rubrics correctness,reuse --reviewer claude
-lean-review 42 --mode scoreboard --post
+lean-review 42 --repo owner/name                          # all rubrics, print only
+lean-review 42 --repo owner/name --rubrics correctness,reuse --reviewer claude
+lean-review 42 --repo owner/name --post                   # one PR review, as your gh login
+lean-review 42 --repo owner/name --mode scoreboard --post # stateful board + threads
 ```
 
 It **defaults to a dry run**: the review is printed and nothing is posted.
+
+Rubric names for `--rubrics`: `correctness`, `reuse`, `attribution`, `api-design`, `generality`,
+`placement`, `naming`, `documentation`, `proof-quality`, plus any the project adds.
 
 | flag | effect |
 |---|---|
@@ -41,7 +86,8 @@ It **defaults to a dry run**: the review is printed and nothing is posted.
 | `--mode core\|scoreboard` | output style (see below); default from config, else `core` |
 | `--rubrics a,b` | run only these rubrics, in this order |
 | `--reviewer claude,codex,kiro` | restrict the reviewers. The default is every installed one of `claude` and `codex`, drawn at random per rubric |
-| `--claude-model` / `--codex-model` / `--kiro-model` | exact model ids. Defaults: `claude-opus-5-5`, `gpt-6.1-sol`, `gpt-5.6-sol` |
+| `--claude-model` / `--codex-model` / `--kiro-model` | exact model ids. Defaults: `claude-opus-5-5`, `gpt-6.1-sol`, `gpt-5.6-sol` (Kiro needs an exact id; `auto` is refused) |
+| `--repo owner/name` | the repository; defaults to the one the current directory is a clone of |
 | `--no-mathlib` | skip fetching Mathlib source (faster; weaker `reuse`/`naming`) |
 | `--no-halt` | keep reviewing after a rubric blocks. By default a `block` stops the round |
 | `--rerun-all` | scoreboard mode: re-run rubrics that are already green at this head |
@@ -66,6 +112,55 @@ It **defaults to a dry run**: the review is printed and nothing is posted.
     only that rubric, with your reply in context, and answers in the thread.
   - **Where state lives.** State is hidden JSON inside *your own* scoreboard comment. No other
     store exists, and a board posted by anyone else is never read.
+
+## Output, run time and exit codes
+
+- **stdout** holds the review exactly as it would be posted (Markdown), followed by the inline
+  comments in core mode. **stderr** holds progress, one `[rubric] reviewer → verdict` line per
+  rubric, plus any errors.
+- **Run time.** Each rubric takes about 10–60 seconds, so all nine take a few minutes. The first
+  step also downloads the PR's code and, unless you pass `--no-mathlib`, the full Mathlib source
+  the project pins. That download can add several minutes. The tool is non-interactive and never
+  prompts, so allow at least 30 minutes before treating a run as hung.
+- **Exit status:**
+
+  | status | meaning |
+  |---|---|
+  | 0 | The review completed and was printed (and posted with `--post`). A `blocked` or `changes requested` verdict still exits 0. Read the verdict from the output. |
+  | 1 | A usage or setup error, or posting failed. The message on stderr says which. |
+  | 3 | No rubric produced a verdict, typically because every reviewer CLI is logged out, outdated, or out of quota. Nothing was posted. |
+
+- **Verdicts.** Each rubric returns `approve`, `request_changes` or `block`. The review's headline
+  sums them up as `approved`, `changes requested` or `blocked`. A `block` halts the remaining
+  rubrics unless `--no-halt` is given.
+
+## Troubleshooting
+
+stderr names the cause after `no verdict:`.
+
+| message | fix |
+|---|---|
+| `cli_outdated` (e.g. "version 2.1.280 or newer is required", "requires a newer version of Codex") | Update that CLI: `claude update`, or reinstall `codex`. Check that `which claude` points at the updated copy. |
+| `not_authenticated` | Log that CLI in again interactively (run `claude`, then `/login`; or `codex login`). |
+| `model_unavailable` | Your plan cannot use the default model. Pass one it can use: `--claude-model …` or `--codex-model …`. |
+| `quota_exhausted` / `rate_limited` | The subscription window is used up. Wait, or use `--reviewer` to switch to another CLI. |
+| `no reviewer CLI found on PATH` | Install and log into `claude` or `codex` (step 1). |
+| `not inside a GitHub repository` | Pass `--repo owner/name`. |
+| `could not read PR` | Check the number, and that `gh auth status` shows an account that can see the repository. |
+
+A reviewer that is outdated, logged out, out of quota, or without access to its model is dropped
+for the rest of the run, and its rubric goes to another installed reviewer if there is one.
+
+## Notes for AI agents running this
+
+- Run a dry run first, and show the output to the human. Pass `--post` only after they explicitly
+  ask, because it publishes a review under their GitHub account.
+- Don't pass API keys. Only the CLIs' own interactive logins are used, and the keys would be
+  ignored.
+- Use `--rubrics` and `--no-mathlib` for quick checks, and a full run for a real review.
+- Don't re-run a full review repeatedly. Each run uses the human's subscription quota.
+- Exit 0 with a `blocked` headline is a successful run that found problems. It is not a tool
+  failure.
 
 ## Configuring a project
 
