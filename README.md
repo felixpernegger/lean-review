@@ -16,15 +16,16 @@ daemon.
 
 These steps are written so that a person or an AI agent can follow them literally.
 
-**1. Check the prerequisites.** Each command should succeed:
+**1. Check the prerequisites.** The required ones are Python, git, `gh`, at least one reviewer
+CLI, and either uv or pipx to install with:
 
 ```bash
 python3 --version     # 3.11 or newer
 git --version
 gh auth status        # GitHub CLI, logged in (`gh auth login` if not)
 claude --version      # Claude Code 2.1.280 or newer, logged in to a Claude subscription
-codex --version       # optional: OpenAI Codex CLI (a current release), logged in to ChatGPT
-uv --version          # optional, for the install below
+codex --version       # optional second reviewer: OpenAI Codex CLI (a current release), logged in to ChatGPT
+uv --version          # uv, or else pipx (`pipx --version`), to install the tool
 ```
 
 At least one reviewer CLI is required:
@@ -32,7 +33,10 @@ At least one reviewer CLI is required:
 - [`codex`](https://www.npmjs.com/package/@openai/codex)
 - `kiro-cli`, after `kiro-cli login`. Kiro is only used when you pass `--reviewer kiro`.
 
-Each CLI must be logged in once, interactively. lean-review never asks for keys or tokens. `gh`
+lean-review runs the first `claude` / `codex` / `kiro-cli` on your PATH, so check `which claude`
+when several are installed. Each CLI must be logged in once, interactively. lean-review never
+asks for keys or tokens. Reviews run in a clean HOME holding only the login, so your own
+`CLAUDE.md`, settings, skills and MCP servers are not used. `gh`
 reads the PR and, with `--post`, publishes as you. Private repositories work if your login can
 read them.
 
@@ -40,8 +44,9 @@ read them.
 
 ```bash
 uv tool install git+https://github.com/felixpernegger/lean-review   # puts `lean-review` on PATH
-# or run once without installing:
-uvx --from git+https://github.com/felixpernegger/lean-review lean-review --help
+# or run without installing: put `uvx --from git+https://github.com/felixpernegger/lean-review`
+# in front of any `lean-review` command below, e.g.
+uvx --from git+https://github.com/felixpernegger/lean-review lean-review 13008 --repo TauCetiProject/TauCeti --rubrics proof-quality --no-mathlib
 # or with pipx:
 pipx install git+https://github.com/felixpernegger/lean-review
 ```
@@ -64,7 +69,8 @@ lean-review <PR number> --repo <owner>/<name>
 lean-review <PR number> --repo <owner>/<name> --post
 ```
 
-Inside a clone of the target repository, you can omit `--repo`.
+Inside a clone of the target repository, you can omit `--repo`. Posts appear under whichever
+account `gh auth status` shows.
 
 ## Use
 
@@ -85,8 +91,10 @@ Rubric names for `--rubrics`: `correctness`, `reuse`, `attribution`, `api-design
 | `--post` | publish to the PR under your GitHub login |
 | `--mode core\|scoreboard` | output style (see below); default from config, else `core` |
 | `--rubrics a,b` | run only these rubrics, in this order |
-| `--reviewer claude,codex,kiro` | restrict the reviewers. The default is every installed one of `claude` and `codex`, drawn at random per rubric |
-| `--claude-model` / `--codex-model` / `--kiro-model` | exact model ids. Defaults: `claude-opus-5-5`, `gpt-6.1-sol`, `gpt-5.6-sol` (Kiro needs an exact id; `auto` is refused) |
+| `--reviewer claude,codex,kiro` | restrict the reviewers. By default each rubric is given to one reviewer drawn at random from the installed `claude` and `codex`; the progress line shows which. Pass e.g. `--reviewer claude` for a single one |
+| `--claude-model` | exact Claude model id; default `claude-opus-5-5` |
+| `--codex-model` | exact Codex model id; default `gpt-6.1-sol` |
+| `--kiro-model` | exact Kiro model id; default `gpt-5.6-sol`. `auto` is refused |
 | `--repo owner/name` | the repository; defaults to the one the current directory is a clone of |
 | `--no-mathlib` | skip fetching Mathlib source (faster; weaker `reuse`/`naming`) |
 | `--no-halt` | keep reviewing after a rubric blocks. By default a `block` stops the round |
@@ -119,9 +127,14 @@ Rubric names for `--rubrics`: `correctness`, `reuse`, `attribution`, `api-design
   comments in core mode. **stderr** holds progress, one `[rubric] reviewer → verdict` line per
   rubric, plus any errors.
 - **Run time.** Each rubric takes about 10–60 seconds, so all nine take a few minutes. The first
-  step also downloads the PR's code and, unless you pass `--no-mathlib`, the full Mathlib source
-  the project pins. That download can add several minutes. The tool is non-interactive and never
-  prompts, so allow at least 30 minutes before treating a run as hung.
+  step also downloads the PR's code and, unless you pass `--no-mathlib`, the Mathlib source the
+  project pins. That is usually under a minute, but slower on a slow connection. The tool is
+  non-interactive and never prompts, so allow at least 30 minutes before treating a run as hung.
+  When run through `uvx`, uv's own build messages appear on stderr first.
+- **Disk.** Everything is downloaded into a fresh temporary directory, which is deleted when the
+  run ends (`--keep` keeps it and prints its path). Each reviewer's throwaway HOME lives under
+  `~/.lean-review-rev/` and is removed as soon as that reviewer finishes. Nothing else persists,
+  apart from uv's or pipx's own package cache.
 - **Exit status:**
 
   | status | meaning |
