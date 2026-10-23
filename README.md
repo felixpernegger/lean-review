@@ -12,6 +12,8 @@ differences: it uses an agentic read-only review over a checkout instead of a si
 authenticates through subscription CLIs instead of an API key, and it runs as a CLI with no
 daemon.
 
+> **AI agents:** read [AGENTS.md](AGENTS.md) for step-by-step instructions.
+
 ## Quick start
 
 These steps are written so that a person or an AI agent can follow them literally.
@@ -164,16 +166,11 @@ stderr names the cause after `no verdict:`.
 A reviewer that is outdated, logged out, out of quota, or without access to its model is dropped
 for the rest of the run, and its rubric goes to another installed reviewer if there is one.
 
-## Notes for AI agents running this
+## Notes for AI agents
 
-- Run a dry run first, and show the output to the human. Pass `--post` only after they explicitly
-  ask, because it publishes a review under their GitHub account.
-- Don't pass API keys. Only the CLIs' own interactive logins are used, and the keys would be
-  ignored.
-- Use `--rubrics` and `--no-mathlib` for quick checks, and a full run for a real review.
-- Don't re-run a full review repeatedly. Each run uses the human's subscription quota.
-- Exit 0 with a `blocked` headline is a successful run that found problems. It is not a tool
-  failure.
+If you are an AI agent asked to run lean-review, or to change this repository, follow
+[AGENTS.md](AGENTS.md). It covers the step-by-step procedure, how to read the output, what to do
+on each error, and the rules, such as never posting without the user's explicit consent.
 
 ## Configuring a project
 
@@ -219,8 +216,8 @@ Placeholders such as `{{project}}` and `{{source_root}}` are filled from the con
 ## How it stays honest
 
 - **Clean room.** Each reviewer runs in a throwaway HOME holding only its own subscription
-  credential, so your `CLAUDE.md`, `AGENTS.md`, skills, plugins and other credentials never reach
-  it.
+  credential, so your personal `CLAUDE.md`, `AGENTS.md`, skills, plugins and other credentials
+  never reach it.
 - **Read-only tools.** claude and kiro get only read, grep and glob: no shell, no writes, no web.
   codex runs in its own `read-only` sandbox with an empty environment.
 - **Unforgeable verdict.** The verdict is read only from after a fresh random marker. A
