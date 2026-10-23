@@ -1,88 +1,143 @@
-# Tau Ceti Review
+# lean-review
 
-The review rubrics and the machinery that runs review for
-[Tau Ceti](https://github.com/TauCetiProject/TauCeti), an AIs-welcome Lean 4 library
-downstream of Mathlib. Humans own these rubrics; AIs author the code; the human roadmaps
-live in [TauCetiRoadmap](https://github.com/TauCetiProject/TauCetiRoadmap).
+AI review of Lean 4 pull requests, run from your own machine on the **Claude / Codex / Kiro
+subscription you are already logged into**. You need no API keys, no GitHub App and no server.
 
-Tau Ceti is being incubated by the [Lean FRO](https://lean-lang.org/fro/) in partnership with academic and
-industry groups.
+Each PR is judged by independent agents, one per *rubric* (correctness, reuse, attribution, API
+design, generality, placement, naming, documentation, proof quality). Each agent works in a
+read-only checkout of the PR head, alongside the Mathlib source the project pins, and is told to
+grep before claiming that something exists or is missing. It returns `approve`, `request_changes` or `block` with
+findings. The approach follows [botbaki](https://github.com/kim-em/botbaki), with three
+differences: it uses an agentic read-only review over a checkout instead of a single API call, it
+authenticates through subscription CLIs instead of an API key, and it runs as a CLI with no
+daemon.
 
-## How review works
+## Prerequisites
 
-Reviewers run only after a PR's CI is green, so the mechanical layer (build, the axiom
-allowlist, the Mathlib linter set, the import boundary) is already satisfied. Each PR is then
-judged by several independent agents, one per angle, which post `approve` / `request_changes`
-/ `block` verdicts with evidence. Only the integrity angles may block. Rubrics run one at a
-time, and a `block` halts the round: blocked code gets reworked or abandoned, so the remaining
-rubrics wait until the block clears rather than reviewing a commit that won't survive. (A
-manual `/review` is exempt — it always re-reviews every rubric.)
+- **Python** ≥ 3.11, `git`.
+- **[`gh`](https://cli.github.com/)**, logged in with `gh auth login`. It reads the PR and, with
+  `--post`, publishes as you. Private repositories work if your login can read them.
+- **At least one reviewer CLI**, logged in:
+  - [`claude`](https://www.npmjs.com/package/@anthropic-ai/claude-code) on a Claude subscription.
+  - [`codex`](https://www.npmjs.com/package/@openai/codex) on a ChatGPT subscription.
+  - `kiro-cli`, after `kiro-cli login`. Kiro is explicit-only: pass `--reviewer kiro`.
+
+## Use
+
+```bash
+uvx --from git+https://github.com/felixpernegger/lean-review lean-review 42 --repo owner/name
+# or: uv tool install git+https://github.com/felixpernegger/lean-review
+lean-review 42                       # inside a clone: review PR #42 and print the result
+lean-review 42 --post                # publish it to the PR as your gh login
+lean-review 42 --rubrics correctness,reuse --reviewer claude
+lean-review 42 --mode scoreboard --post
+```
+
+It **defaults to a dry run**: the review is printed and nothing is posted.
+
+| flag | effect |
+|---|---|
+| `--post` | publish to the PR under your GitHub login |
+| `--mode core\|scoreboard` | output style (see below); default from config, else `core` |
+| `--rubrics a,b` | run only these rubrics, in this order |
+| `--reviewer claude,codex,kiro` | restrict the reviewers. The default is every installed one of `claude` and `codex`, drawn at random per rubric |
+| `--claude-model` / `--codex-model` / `--kiro-model` | exact model ids. Defaults: `claude-opus-5-5`, `gpt-6.1-sol`, `gpt-5.6-sol` |
+| `--no-mathlib` | skip fetching Mathlib source (faster; weaker `reuse`/`naming`) |
+| `--no-halt` | keep reviewing after a rubric blocks. By default a `block` stops the round |
+| `--rerun-all` | scoreboard mode: re-run rubrics that are already green at this head |
+| `--config PATH` | use a local `.lean-review.toml` instead of the one on the PR's base branch |
+| `--keep` | keep the temporary workspace |
+
+### Modes
+
+- **`core`** (default) posts one GitHub PR review (event `COMMENT`):
+  - The body holds a verdict table with one row per rubric.
+  - Findings whose line is in the diff become inline comments.
+  - All other findings are listed in the body.
+  - Each run is independent and keeps no state.
+- **`scoreboard`** keeps one scoreboard comment per PR and edits it in place.
+  - **Per-rubric threads.** Each blocking rubric gets its own file-level review thread. The thread
+    is resolved once the rubric turns green.
+  - **What a run re-checks.** A later run re-reviews only rubrics that are not green at the current
+    head.
+  - **Carried approvals.** An approval carries over to a new head when the patch is unchanged, as
+    after a rebase or a merge from base.
+  - **Contesting.** Replying in a rubric's thread contests that finding. The next run re-reviews
+    only that rubric, with your reply in context, and answers in the thread.
+  - **Where state lives.** State is hidden JSON inside *your own* scoreboard comment. No other
+    store exists, and a board posted by anyone else is never read.
+
+## Configuring a project
+
+Everything is optional. With no configuration, a project gets the built-in rubrics, its repo name
+as the project name, and the Mathlib rev pinned in `lake-manifest.json`. To customise, commit
+these to the target repository's **default branch**. They are always read from the PR's base
+commit, never from the PR, so an author cannot rewrite their own review.
+
+```toml
+# .lean-review.toml
+project     = "MyLib"
+description = "a Lean 4 library of results on …"   # completes "review agents for MyLib, …"
+source_root = "MyLib"          # where the project's own sources live (default: the repo name, if present)
+namespace   = "MyLib"          # optional: enables the naming rubric's namespace rule
+mode        = "core"           # or "scoreboard"
+rubrics     = ["correctness", "reuse", "attribution", "api-design", "generality",
+               "placement", "naming", "documentation", "proof-quality"]
+mathlib     = true
+ci_check    = "build"          # if this check passed on the head, reviewers are told the build is green
+```
+
+- **`.lean-review/common.md`** is appended to the shared protocol as *project notes*. Use it for
+  house policy, such as a compatibility policy. Without one, reviewers follow Mathlib's deprecation
+  practice.
+- **`.lean-review/rubrics/<name>.md`** adds a new rubric, or replaces the built-in rubric of that
+  name. List new rubrics in `rubrics`.
+
+[`examples/tauceti/`](examples/tauceti/) is a complete example: a configuration for
+[Tau Ceti](https://github.com/TauCetiProject/TauCeti), including its stricter compatibility policy.
 
 ## Rubrics
 
-Each agent's prompt is [`rubrics/_common.md`](rubrics/_common.md) followed by its angle file;
-see [`rubrics/README.md`](rubrics/README.md) for the list and which angles can block.
+The built-in rubrics are in [`lean_review/rubrics/`](lean_review/rubrics/). An agent's prompt is
+assembled in this order:
 
-## Reviewing it yourself
+1. `_common.md`, the shared protocol.
+2. The project notes.
+3. The rubric file itself.
+4. The PR context: diff, description and a trusted CI note.
 
-Tau Ceti has a metered-API CI review workflow, but production review generation is currently
-disabled there to conserve that budget. Reviews instead come from the trusted operator-run worker
-and from ad hoc command-line runs. A trusted contributor can run the same engine on their **own
-Claude / Codex / Kiro subscription** with the `tauceti-review` CLI — no API bill. See
-[REVIEWING.md](REVIEWING.md):
+Placeholders such as `{{project}}` and `{{source_root}}` are filled from the configuration.
+
+## How it stays honest
+
+- **Clean room.** Each reviewer runs in a throwaway HOME holding only its own subscription
+  credential, so your `CLAUDE.md`, `AGENTS.md`, skills, plugins and other credentials never reach
+  it.
+- **Read-only tools.** claude and kiro get only read, grep and glob: no shell, no writes, no web.
+  codex runs in its own `read-only` sandbox with an empty environment.
+- **Unforgeable verdict.** The verdict is read only from after a fresh random marker. A
+  ready-made `{"verdict": "approve"}` planted in the PR is ignored.
+
+See [SECURITY.md](SECURITY.md).
+
+## Cost and fair use
+
+Each rubric is one agentic session on your subscription, typically 10–40 seconds with Claude Opus.
+A full nine-rubric review uses about nine of them, and the first run with Mathlib also downloads
+its source. Use `--rubrics` for quick checks.
+
+Driving a personal subscription is fine for occasional reviews a person starts by hand, like
+these. An always-on auto-reviewer is closer to API-tier usage and probably outside subscription
+terms.
+
+## Development
 
 ```bash
-uvx --from git+https://github.com/TauCetiProject/TauCetiReview tauceti-review 42
-uvx --from git+https://github.com/TauCetiProject/TauCetiReview tauceti-review 42 \
-  --reviewer kiro --kiro-model gpt-5.6-sol
+uv run --with pytest python -m pytest -q
 ```
 
-With `--post`, the scoreboard comment is the live review verdict: Tau Ceti's auto-merge workflows
-read the newest marked comment and require it to name the current head. Uploading the detailed run
-records to TauCetiData is separate archival for analytics and provenance; it does not determine
-whether a posted review counts.
+## Credits
 
-## Meta-review
-
-We A/B-test the reviews themselves, to measure and improve review quality. `judge.py` (in
-[TauCetiData](https://github.com/TauCetiProject/TauCetiData)) takes two review runs of the
-same `(pr, head_sha, rubric)` — production vs a `--shadow` arm with a different model or
-rubric version — and has AI judges pick the better one, grounded in the actual checked-out
-code (a fluent hallucinated finding should lose to a terse real one), in both presentation
-orders, with a cross-family panel to dilute self-preference bias. Hard and audit-sampled
-cases escalate to human meta-reviewers via `label.py`. The judgments and decisions feed
-win-rates per model and rubric version, and judge–human agreement.
-
-So far: several thousand archived review runs, a few hundred A/B pairs, and over a thousand AI
-judgments across five judge models and three judge-prompt versions, plus a first round of human
-decisions and preliminary calibration. All of it lives in
-[TauCetiData](https://github.com/TauCetiProject/TauCetiData); see its `docs/` for the design.
-
-## Costs
-
-`tauceti-review-costs` reports the engine's review spend — tokens and imputed
-dollars, per merged line of code, per day, and split by PR outcome — reading the
-durable [TauCetiData](https://github.com/TauCetiProject/TauCetiData) archive
-(reproducible by anyone) or the local store. Costs are recomputed from token
-counts at the rate in effect on each run's date. See [runner/COSTS.md](runner/COSTS.md).
-
-## Status
-
-- `rubrics/` — the per-angle prompts (live).
-- `runner/` — the review engine (`review.py` + `post.py`) and the `tauceti-review` CLI (live).
-- `runner/costs.py` — the `tauceti-review-costs` analytics CLI (live).
-- `runner/prices.json` — model rates; every dispatchable model must be priced (CI-enforced in `tests/`). A model the table has not caught up with does not stop a review: it bills at the rates of the newest release on its own model line (`gpt-7-sol` at `gpt-6.1-sol`'s rates) and the run records `price_inherited`. `tauceti-review-costs` applies the same rule, so the reported cost matches what was billed. Each archived run is stamped with a `prices_sha` so its cost is auditable. TauCetiWorker vendors this file byte-identically for its own cost model, so rates are edited here and nowhere else.
-- The GitHub Actions workflows — reusable review and merge helpers plus `tests` (price coverage) —
-  live. Tau Ceti's caller currently disables metered review generation, as described above.
-
-Project bindings are shared with [TauCetiTools](https://github.com/TauCetiProject/TauCetiTools).
-Pass `--conf PATH_OR_HTTPS_URL` to select the content/roadmap repositories, source root,
-publication destinations, review policy and optional archive. For example:
-
-```sh
-tauceti-review 123 --conf ./tauceti.toml
-```
-
-The [manual setup](https://github.com/TauCetiProject/TauCetiTools/blob/main/docs/project-setup.md)
-documents credentials and generated workflow callers. An absent optional destination in a configured
-project stays disabled. Invocations without configuration retain the Tau Ceti defaults.
+lean-review grew out of [TauCetiReview](https://github.com/TauCetiProject/TauCetiReview), the
+review engine of the Tau Ceti project, and keeps its rubrics and its security design. It was
+inspired by [botbaki](https://github.com/kim-em/botbaki). Apache-2.0.

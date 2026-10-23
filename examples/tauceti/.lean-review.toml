@@ -1,0 +1,8 @@
+# Example configuration for Tau Ceti (TauCetiProject/TauCeti). Copy this file and the
+# `.lean-review/` directory beside it to the root of the target repository's default branch.
+project     = "Tau Ceti"
+description = "an AIs-welcome Lean 4 library downstream of Mathlib"
+source_root = "TauCeti"
+namespace   = "TauCeti"
+mode        = "scoreboard"
+ci_check    = "build"

@@ -1,23 +1,25 @@
 [project]
-name = "tauceti-review"
-version = "0.1.0"
-description = "Run the Tau Ceti AI code review on a PR using your own Claude/Codex/Kiro subscription."
-readme = "REVIEWING.md"
-requires-python = ">=3.10"
+name = "lean-review"
+version = "0.2.0"
+description = "AI review of Lean 4 pull requests on your own Claude / Codex / Kiro subscription."
+readme = "README.md"
+requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
-# Shared project configuration is the only Python dependency: the engine shells out to the `git`, `gh`, `claude`, `codex`, and `kiro-cli` CLIs.
-dependencies = ["tauceti-tools @ git+https://github.com/TauCetiProject/TauCetiTools@b22318446dcf66776248ed8c19370cd8da396748"]
+# No Python dependencies: the engine shells out to `git`, `gh`, and the reviewer CLIs.
+dependencies = []
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
 
 [project.scripts]
-tauceti-review = "runner.cli:main"
-tauceti-review-costs = "runner.costs:main"
+lean-review = "lean_review.cli:main"
 
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["runner"]
+packages = ["lean_review"]
 
 [tool.setuptools.package-data]
-runner = ["prices.json"]
+lean_review = ["rubrics/*.md", "rubrics/references/*.md"]
