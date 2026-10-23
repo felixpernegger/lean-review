@@ -101,8 +101,8 @@ uvx --from git+https://github.com/felixpernegger/lean-review lean-review N --rep
   Prefer your shell tool's own background option for this command. If you append `&` instead,
   the tool reports the command finished immediately, with exit 0, while lean-review is still
   running. Either way, **only `exit.txt` tells you the run is over and how it ended.** Wait until
-  it exists, with your tool's wait or monitor feature or a polling loop if long sleeps are
-  blocked. A full nine-rubric run can take 5–15 minutes. The tool never prompts for input.
+  it exists, with your tool's wait or monitor feature, or a polling loop such as
+  `until [ -f exit.txt ]; do sleep 15; done` (repeat it if your tool's timeout cuts it short). A full nine-rubric run can take 5–15 minutes. The tool never prompts for input.
 - **Run from anywhere.** You don't need a clone unless you rely on `--repo` being inferred.
 - **No leftovers.** Everything goes into a temporary directory that is deleted afterwards
   (`--keep` keeps it). Nothing needs cleaning up.
@@ -141,8 +141,9 @@ uvx --from git+https://github.com/felixpernegger/lean-review lean-review N --rep
   - `every rubric approved; nothing posted (--post-unless-approved)`
   - `not posted: <login> already posted a lean-review review of this head: <url> …`: a review of
     this exact commit by the same account already exists, for example from an earlier or
-    concurrent run. That is a success; report the existing URL. Pass `--repost` only if the user
-    wants a second copy.
+    concurrent run. That is a success, and it fulfils a request to post: the review the user asked
+    for is on the PR. Report the existing URL. Pass `--repost` only if the user explicitly wants a
+    second copy.
 
 **review.md (stdout), core mode:**
 - A first line `<!--lean-review:review-->`: a hidden marker, ignore it.
