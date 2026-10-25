@@ -41,10 +41,21 @@ def test_core_review_inline_vs_body(ws):
     }
     body, comments = render_core_review(["correctness", "naming", "reuse"], state_map, ws, "changes requested")
     assert comments == [{"path": "Lib/Foo.lean", "line": 2, "side": "RIGHT",
-                         "body": "**correctness** — inline me\n\n**Fix:** f"}]
+                         "body": "**correctness** — inline me\n\n**Fix:** f\n\n" + render.CREDIT}]
     assert "outside hunk" in body and "pr-wide" in body and "inline me" not in body
     assert "s\\|ummary" in body and "not run" in body
     assert body.startswith(render.REVIEW_MARKER)
+
+
+def test_every_posted_body_carries_the_credit_line(ws):
+    cf = {"rubric": "reuse", "verdict": "block", "provider": "claude", "summary": "s",
+          "findings": [{"file": "Lib/Foo.lean", "line": 2, "issue": "i"}]}
+    body, comments = render_core_review(["reuse"], {"reuse": cf}, ws, "blocked")
+    bodies = [body, *(c["body"] for c in comments), render.render_thread(cf, ws),
+              render.render_contest_reply(cf, HEAD),
+              render.render_scoreboard(["reuse"], {"reuse": cf}, ws, "blocked", {})]
+    assert len(bodies) == 5 and all(render.CREDIT in b for b in bodies)
+    assert "github.com/felixpernegger/lean-review" in render.CREDIT
 
 
 def test_scoreboard_round_trips_state(ws):

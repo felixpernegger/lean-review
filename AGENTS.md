@@ -154,8 +154,10 @@ uvx --from git+https://github.com/felixpernegger/lean-review lean-review N --rep
 - A table with one row per rubric: icon, rubric, verdict, reviewer, one-paragraph summary.
 - Optionally `### Findings outside the diff`, one bullet per finding.
 - One `--- inline path:line` block per finding that will be attached to a changed line.
-- A `<sub>Reviewed head … · diff · lean-review <version></sub>` footer, followed by a hidden
-  `<!--lean-review:meta …-->` line. The footer is for readers; ignore the meta line.
+- A `<sub>Reviewed head … · diff · lean-review <version></sub>` footer and a `Make AI reviews
+  like this with lean-review.` credit line, followed by a hidden `<!--lean-review:meta …-->`
+  line. The footer is for readers; ignore the meta line. Every posted body, including inline
+  comments, threads and replies, ends with the same credit line.
 
 **review.md, scoreboard mode:** the scoreboard, then `---` and one thread body per blocking
 rubric.

@@ -11,6 +11,7 @@ BOARD_MARKER = "<!--lean-review:scoreboard-->"
 REPLY_MARKER = "<!--lean-review:reply-->"
 RUBRIC_MARKER_RE = re.compile(r"<!--lean-review:rubric:([a-z][a-z0-9-]*)-->")
 META_RE = re.compile(r"<!--lean-review:meta (.*?)-->", re.S)
+CREDIT = "<sub>Make AI reviews like this with [lean-review](https://github.com/felixpernegger/lean-review).</sub>"
 
 ICON = {"green": "✅", "stale": "♻️", "blocking_request": "🟡", "blocking_block": "⛔",
         "error": "⚠️", "absent": "▫️"}
@@ -59,7 +60,7 @@ def _footer(ws):
     if ws.merge_base:
         sub.append(f"[diff](https://github.com/{ws.repo}/compare/{ws.merge_base}...{ws.head})")
     sub.append(f"lean-review {__version__}")
-    return f"<sub>{' · '.join(sub)}</sub>"
+    return f"<sub>{' · '.join(sub)}</sub>\n\n{CREDIT}"
 
 
 def diff_right_lines(diff_text):
@@ -113,6 +114,7 @@ def render_core_review(rubrics, state_map, ws, overall):
                     body.append(f"**Fix:** {sanitize(f['fix'])}")
                 if f.get("evidence"):
                     body.append(f"<sub>Evidence: {sanitize(f['evidence'], 600)}</sub>")
+                body.append(CREDIT)
                 comments.append({"path": path, "line": n, "side": "RIGHT",
                                  "body": "\n\n".join(body)})
             else:
@@ -152,7 +154,7 @@ def render_contest_reply(cf, head_sha):
         verdict = f"the finding stands — {why}"
     return (f"{REPLY_MARKER}\n**Re: your reply on `{rubric}`:** re-reviewed on `{head_sha[:7]}`; "
             f"{verdict}\n\n<sub>{_judge(cf)} · answers replies through comment "
-            f"{newest_reply_id(cf)}.</sub>")
+            f"{newest_reply_id(cf)}.</sub>\n\n{CREDIT}")
 
 
 def render_scoreboard(rubrics, state_map, ws, overall, persisted):
