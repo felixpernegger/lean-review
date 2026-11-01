@@ -221,7 +221,8 @@ Placeholders such as `{{project}}` and `{{source_root}}` are filled from the con
   credential, so your personal `CLAUDE.md`, `AGENTS.md`, skills, plugins and other credentials
   never reach it.
 - **Read-only tools.** claude and kiro get only read, grep and glob: no shell, no writes, no web.
-  codex runs in its own `read-only` sandbox with an empty environment.
+  codex runs in its own `read-only` sandbox. Its commands inherit no environment except `PATH`,
+  which its Linux launcher needs to find the system `bwrap`, and a private temporary directory.
 - **Unforgeable verdict.** The verdict is read only from after a fresh random marker. A
   ready-made `{"verdict": "approve"}` planted in the PR is ignored.
 

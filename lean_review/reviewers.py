@@ -149,6 +149,10 @@ def reviewer_env(provider):
         codex_home = os.path.join(home, ".codex")
         os.makedirs(codex_home, exist_ok=True)  # codex requires CODEX_HOME to already exist
         env["CODEX_HOME"] = codex_home
+        # The sandbox launcher needs writable bookkeeping before it enforces the read-only
+        # policy; a host /tmp that is itself read-only (a container, another sandbox) stops it.
+        env["TMPDIR"] = os.path.join(home, "tmp")
+        os.mkdir(env["TMPDIR"], mode=0o700)
         src = os.path.expanduser("~/.codex/auth.json")
         if os.path.exists(src):
             shutil.copyfile(src, os.path.join(codex_home, "auth.json"))
@@ -196,17 +200,35 @@ def run_claude(prompt, cwd, model, env):
     out = {"returncode": r.returncode, "raw_stderr": r.stderr[-3000:]}
     try:
         d = json.loads(r.stdout)
-        out.update(text=d.get("result", "") or "", is_error=d.get("is_error"),
-                   error_status=d.get("api_error_status"))
+        # On a failed run `result` is Claude Code's own error, not a review: keep it out of `text`.
+        out.update(text="" if d.get("is_error") else d.get("result", "") or "",
+                   is_error=d.get("is_error"), error_status=d.get("api_error_status"))
+        if d.get("is_error"):
+            out["error_message"] = d.get("result") or ""
     except (ValueError, AttributeError) as e:
         out.update(text="", parse_error=str(e), raw_stdout=r.stdout[-3000:])
     return out
 
 
+def codex_shell_environment_args(env):
+    """Codex's tool commands inherit nothing, except what its sandbox launcher needs to start.
+
+    `inherit=none` alone also empties PATH, so the Linux helper cannot find the system `bwrap` and
+    falls back to its bundled one, which may be missing or lack the system binary's AppArmor
+    profile. TMPDIR is the private per-attempt directory from reviewer_env. Neither grants the
+    model write access: the read-only sandbox policy still applies to its tools."""
+    args = ["-c", "shell_environment_policy.inherit=none"]
+    for key in ("PATH", "TMPDIR"):
+        if key in env:
+            args += ["-c", f"shell_environment_policy.set.{key}="
+                     + json.dumps(env[key], ensure_ascii=False)]
+    return args
+
+
 def run_codex(prompt, cwd, model, env):
     # Read-only sandbox; codex's own shell commands get a clean env. `-` reads the prompt on stdin.
-    cmd = (["codex", "exec", "--json", "-s", "read-only", "--skip-git-repo-check",
-            "-c", "shell_environment_policy.inherit=none"]
+    cmd = (["codex", "exec", "--json", "-s", "read-only", "--skip-git-repo-check"]
+           + codex_shell_environment_args(env)
            + (["-m", model] if model else []) + ["-"])
     r = sh(cmd, cwd=cwd, env=env, stdin_text=prompt)
     out = {"returncode": r.returncode, "raw_stderr": r.stderr[-3000:]}
@@ -223,6 +245,8 @@ def run_codex(prompt, cwd, model, env):
         if t == "item.completed" and (ev.get("item") or {}).get("type") == "agent_message":
             text = ev["item"].get("text", "")
         elif "error" in t or "failed" in t:
+            if t == "turn.failed":  # the authoritative terminal failure, even after an answer
+                out["is_error"] = True
             e = ev.get("error")
             msg = e.get("message") if isinstance(e, dict) else ev.get("message")
             if isinstance(msg, str):
@@ -230,7 +254,7 @@ def run_codex(prompt, cwd, model, env):
     out["text"] = text
     if errors:
         out["error_message"] = errors[-1][:2000]
-    if r.returncode != 0 or not text:
+    if r.returncode != 0 or not text or out.get("is_error"):
         out["raw_stdout"] = r.stdout[-3000:]
     return out
 
@@ -272,27 +296,24 @@ def cli_reports_failure(res):
 
 
 def error_kind(res):
-    """Classify a run that produced no verdict. The result text is consulted only once the CLI
-    itself reports failure: it is model output about an untrusted diff, and a review that merely
-    mentions a 401 must not read as an auth outage."""
+    """Classify a run that produced no verdict, from the CLI's own diagnostics only. The runners
+    put a native error in `error_message`; `text` is model output about an untrusted diff, and a
+    review that merely mentions a 401 must not read as an auth outage."""
     hay = f"{res.get('raw_stderr') or ''}\n{res.get('parse_error') or ''}\n{res.get('error_message') or ''}"
-    if cli_reports_failure(res):
-        hay += f"\n{(res.get('text') or '').strip()}"
     for kind, pattern in _ERROR_KINDS:
         if pattern.search(hay):
             return kind
+    if res.get("error_status") == 429:
+        return "rate_limited"
     return "unknown_error" if res.get("returncode") else "no_verdict"
 
 
 def failure_summary(res, limit=300):
     """The CLI's own diagnosis of a failed run, for the local operator's terminal only: a parsed
-    error message, else the last non-empty stderr line, else (when the CLI itself reports
-    failure) its result text, where Claude Code puts a provider error."""
+    error message, else the last non-empty stderr line."""
     if res.get("error_message"):
         return " ".join(res["error_message"].split())[:limit]
     for line in reversed((res.get("raw_stderr") or "").splitlines()):
         if line.strip():
             return line.strip()[:limit]
-    if cli_reports_failure(res):
-        return " ".join((res.get("text") or "").split())[:limit]
     return ""

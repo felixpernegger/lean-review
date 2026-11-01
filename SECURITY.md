@@ -24,7 +24,9 @@ stealing and no way to publish or approve on its own authority.
     the real HOME and says so.
 - **Read-only tools.**
   - claude: `--tools Read Grep Glob`. Without `--tools` the shell would stay available.
-  - codex: a `read-only` sandbox with `shell_environment_policy.inherit=none`.
+  - codex: a `read-only` sandbox with `shell_environment_policy.inherit=none`. Only `PATH` (so
+    the Linux launcher finds the system `bwrap`) and a private per-attempt `TMPDIR` are set back;
+    neither carries a credential or grants a write.
   - kiro: trusted tools `read,grep,glob`.
 - **Unforgeable verdict.**
   - A verdict is parsed only from after a fresh random marker. Parsing fails closed on a missing
