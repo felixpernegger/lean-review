@@ -154,8 +154,10 @@ uvx --from git+https://github.com/felixpernegger/lean-review lean-review N --rep
 - A table with one row per rubric: icon, rubric, verdict, reviewer, one-paragraph summary.
 - Optionally `### Findings outside the diff`, one bullet per finding.
 - One `--- inline path:line` block per finding that will be attached to a changed line.
-- A `<sub>Reviewed head … · diff · lean-review <version></sub>` footer, followed by a hidden
-  `<!--lean-review:meta …-->` line. The footer is for readers; ignore the meta line.
+- A `<sub>Reviewed head … · diff · lean-review <version></sub>` footer and a `Make AI reviews
+  like this with lean-review.` credit line, followed by a hidden `<!--lean-review:meta …-->`
+  line. The footer is for readers; ignore the meta line. Every posted body, including inline
+  comments, threads and replies, ends with the same credit line.
 
 **review.md, scoreboard mode:** the scoreboard, then `---` and one thread body per blocking
 rubric.
@@ -255,7 +257,8 @@ Tests cover most of these. Keep them that way.
 - **Reviewer isolation.**
   - Read-only tools only: claude `--tools Read Grep Glob`, codex `-s read-only`, kiro
     `--trust-tools=read,grep,glob`.
-  - A throwaway HOME holding only that provider's login.
+  - A throwaway HOME holding only that provider's login. Claude's is one path per process,
+    wiped before and after each attempt, so the prompt cache keeps working.
   - No API keys, and no `GH_TOKEN` or `gh` credential, in a reviewer's environment.
 - **Verdict channel.** Parse verdicts only from after the one-time marker, and fail closed. A run
   the CLI reports as failed is never a verdict.
@@ -267,6 +270,9 @@ Tests cover most of these. Keep them that way.
   `>`.
 - **Packaging.** No Python dependencies. Python 3.11+. Rubrics ship as package data. A new
   rubric file lands in the wheel automatically through the glob in `pyproject.toml`.
+- **Cacheable prompt prefix.** The context passed to `build_prompt` is identical for every rubric
+  of a run. Anything rubric-specific (the reactivation block) goes in `rubric_context`, after the
+  rubric text. `tests/test_prompt.py` checks this.
 - **Rubric prompts stay project-agnostic.** No project names or roadmap references; use
   placeholders. `tests/test_prompt.py` checks this.
 

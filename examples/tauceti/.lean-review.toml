@@ -6,3 +6,6 @@ source_root = "TauCeti"
 namespace   = "TauCeti"
 mode        = "scoreboard"
 ci_check    = "build"
+# The nine built-in rubrics, plus Tau Ceti's own quality-pass from .lean-review/rubrics/.
+rubrics     = ["correctness", "reuse", "attribution", "api-design", "generality",
+               "placement", "naming", "documentation", "proof-quality", "quality-pass"]

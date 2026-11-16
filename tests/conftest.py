@@ -2,6 +2,8 @@ import pathlib
 
 import pytest
 
+from lean_review import reviewers
+
 from lean_review.workspace import Workspace
 
 HEAD = "a" * 40
@@ -30,3 +32,9 @@ def ws(tmp_path):
     return Workspace(repo="owner/Lib", pr=7, head=HEAD, base=BASE, merge_base=BASE,
                      root=tmp_path, diff_text=DIFF, changed=["Lib/Foo.lean", "Lib/Gone.lean"],
                      title="Add foo", description="body")
+
+
+@pytest.fixture(autouse=True)
+def no_claude_version_probe(monkeypatch):
+    """Tests never start the real `claude --version`; a test that needs another answer patches it."""
+    monkeypatch.setattr(reviewers, "claude_honours_cache_ttl", lambda: True)

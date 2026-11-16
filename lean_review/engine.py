@@ -16,7 +16,9 @@ def run_rubric(cfg, rubric, provider, model, cwd, context, prior=None, reply_tex
     """One rubric on one reviewer, with one retry. Returns the run result; `verdict_obj` is None
     when no attempt produced a verdict behind the one-time marker."""
     marker = "LEAN-REVIEW-VERDICT-" + secrets.token_hex(12)
-    prompt = build_prompt(cfg, rubric, context + build_reactivation_block(prior, reply_text), marker)
+    # `context` is the same for every rubric, so it forms the cached prompt prefix; the
+    # reactivation block is this rubric's own and goes after the rubric text.
+    prompt = build_prompt(cfg, rubric, context, marker, build_reactivation_block(prior, reply_text))
     fn = reviewers.RUNNERS[provider]
     t0 = time.monotonic()
     for attempt in (1, 2):
