@@ -137,7 +137,7 @@ Rubric names for `--rubrics`: `correctness`, `reuse`, `attribution`, `api-design
   When run through `uvx`, uv's own build messages appear on stderr first.
 - **Disk.** Everything is downloaded into a fresh temporary directory, which is deleted when the
   run ends (`--keep` keeps it and prints its path). Each reviewer's throwaway HOME lives under
-  `~/.lean-review-rev/` and is removed as soon as that reviewer finishes. Nothing else persists,
+  `~/.lean-review-rev/` and is emptied or removed as soon as that reviewer finishes. Nothing else persists,
   apart from uv's or pipx's own package cache.
 - **Exit status:**
 
@@ -201,7 +201,8 @@ ci_check    = "build"          # if this check passed on the head, reviewers are
   name. List new rubrics in `rubrics`.
 
 [`examples/tauceti/`](examples/tauceti/) is a complete example: a configuration for
-[Tau Ceti](https://github.com/TauCetiProject/TauCeti), including its stricter compatibility policy.
+[Tau Ceti](https://github.com/TauCetiProject/TauCeti), including its stricter compatibility policy and a project-specific `quality-pass` rubric that
+checks the author's report from Tau Ceti's PR template.
 
 ## Rubrics
 
@@ -210,8 +211,14 @@ assembled in this order:
 
 1. `_common.md`, the shared protocol.
 2. The project notes.
-3. The rubric file itself.
-4. The PR context: diff, description and a trusted CI note.
+3. The PR context: diff, description and a trusted CI note.
+4. The rubric file itself.
+
+Everything before the rubric is the same for every rubric of a run, so Claude reviewers after the
+first read it from the prompt cache instead of processing the whole PR again (with Claude Code
+2.1.242 or newer). When the diff or the description is too long for the prompt, the reviewer is
+told where it was cut, and the complete text is placed in the checkout under `.lean-review-pr/`
+for it to read.
 
 Placeholders such as `{{project}}` and `{{source_root}}` are filled from the configuration.
 

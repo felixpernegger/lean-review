@@ -17,8 +17,10 @@ stealing and no way to publish or approve on its own authority.
   - The PR head is checked out without `.git`.
   - Symlinks that resolve outside the checkout are deleted before any reviewer starts.
 - **Clean-room reviewers.**
-  - Each reviewer process gets a throwaway HOME seeded with only its own subscription credential.
-    It never receives the other providers' credentials, a GitHub token, or an API key from the
+  - Each reviewer process gets an empty HOME seeded with only its own subscription credential.
+    Claude's attempts within one run reuse a single unguessable path, wiped before and after each
+    attempt, because Claude Code writes the HOME path into its system prompt and a changing one
+    would defeat the prompt cache. It never receives the other providers' credentials, a GitHub token, or an API key from the
     operator's environment.
   - If a credential cannot be found (for example a macOS keychain login), the run falls back to
     the real HOME and says so.

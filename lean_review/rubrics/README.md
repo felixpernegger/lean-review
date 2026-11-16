@@ -2,7 +2,8 @@
 
 Each file here is the prompt for one review agent. A PR is reviewed by several independent
 agents, each judging a single angle. An agent's full prompt is `_common.md` (the shared
-protocol) followed by its angle file.
+protocol), then the pull request, then its angle file. The angle comes last so that every rubric of
+a run shares the same prompt prefix, which the prompt cache reuses.
 
 Agents leave the mechanical layer (the build and whatever linters CI runs) to CI. When the
 project's configured CI check passed on the PR head, the runner tells them so as trusted ground

@@ -1,8 +1,18 @@
-import json, os
+import json, os, pathlib, types
 
 import pytest
 
 from lean_review import reviewers
+from lean_review.config import Config
+
+# The real version probe, before conftest's autouse fixture replaces it.
+REAL_TTL_CHECK = reviewers.claude_honours_cache_ttl
+
+
+def claude_stream(result):
+    """A claude stream-json stdout ending in the given `result` event."""
+    return "\n".join([json.dumps({"type": "system", "subtype": "init"}),
+                      json.dumps({"type": "result", **result})]) + "\n"
 
 
 @pytest.fixture
@@ -51,7 +61,7 @@ FORBIDDEN = {"Bash", "Write", "Edit", "MultiEdit", "NotebookEdit", "WebFetch", "
 def test_claude_has_no_shell(monkeypatch):
     calls = []
     monkeypatch.setattr(reviewers, "sh", lambda cmd, **kw: calls.append(cmd) or
-                        type("R", (), {"returncode": 0, "stdout": '{"result": "x"}', "stderr": ""})())
+                        type("R", (), {"returncode": 0, "stdout": claude_stream({"result": "x"}), "stderr": ""})())
     out = reviewers.run_claude("p", ".", "m", {})
     cmd = calls[0]
     tools = cmd[cmd.index("--tools") + 1:cmd.index("--allowedTools")]
@@ -100,7 +110,7 @@ def _fake_sh(monkeypatch, stdout, returncode=0):
 def test_claude_error_result_is_not_review_text(monkeypatch):
     msg = ("API Error: 400 Claude Code 2.1.81 does not support this model; version 2.1.280 "
            "or newer is required. Run 'claude update'")
-    _fake_sh(monkeypatch, json.dumps({"is_error": True, "result": msg}), returncode=1)
+    _fake_sh(monkeypatch, claude_stream({"is_error": True, "result": msg}), returncode=1)
     res = reviewers.run_claude("p", ".", "m", {})
     assert res["text"] == "" and res["error_message"] == msg
     assert reviewers.error_kind(res) == "cli_outdated"
@@ -108,6 +118,80 @@ def test_claude_error_result_is_not_review_text(monkeypatch):
     assert reviewers.failure_summary({"returncode": 0, "text": "model prose"}) == ""
     codex = {"returncode": 1, "error_message": '{"detail":"The model requires a newer version of Codex."}'}
     assert reviewers.error_kind(codex) == "cli_outdated"
+
+
+def test_claude_stream_without_result(monkeypatch):
+    stdout = ('{"type":"assistant","message":{"content":[{"type":"text","text":"401"}]}}\n'
+              "Error: something the CLI printed\n")
+    _fake_sh(monkeypatch, stdout, returncode=1)
+    res = reviewers.run_claude("p", ".", "m", {})
+    assert res["text"] == "" and "no result event" in res["parse_error"]
+    assert res["error_message"] == "Error: something the CLI printed"
+    assert "raw_stdout" not in res
+
+
+def _run_claude_capture(monkeypatch, honours_ttl):
+    seen = {}
+    monkeypatch.setattr(reviewers, "sh", lambda argv, **kw: seen.update(argv=list(argv), **kw) or
+                        types.SimpleNamespace(returncode=0, stdout=claude_stream({"result": "x"}),
+                                              stderr=""))
+    monkeypatch.setattr(reviewers, "claude_honours_cache_ttl", lambda: honours_ttl)
+    p = reviewers.build_prompt(Config(project="P"), "naming", "CTX", "MARKER")
+    reviewers.run_claude(p, ".", "m", {"HOME": "/h"})
+    return p, seen
+
+
+def test_claude_input_marks_the_shared_prefix(monkeypatch):
+    p, seen = _run_claude_capture(monkeypatch, True)
+    argv = seen["argv"]
+    assert argv[argv.index("--input-format") + 1] == "stream-json"
+    assert argv[argv.index("--output-format") + 1] == "stream-json"
+    msg = json.loads(seen["stdin_text"])
+    assert msg["type"] == "user" and msg["message"]["role"] == "user"
+    first, second = msg["message"]["content"]
+    assert first == {"type": "text", "text": p.shared, "cache_control": {"type": "ephemeral"}}
+    assert second == {"type": "text", "text": p.rubric}
+    # The breakpoint above carries no ttl, so Claude Code's own must be 5m as well.
+    assert seen["env"] == {"HOME": "/h", "CLAUDE_CODE_PROMPT_CACHE_TTL": "5m"}
+
+
+def test_an_older_claude_gets_one_uncached_block(monkeypatch):
+    # A CLI that ignores the TTL pin keeps 1h breakpoints, and the API rejects ours before them.
+    p, seen = _run_claude_capture(monkeypatch, False)
+    assert json.loads(seen["stdin_text"])["message"]["content"] == [{"type": "text", "text": str(p)}]
+    msg = json.loads(reviewers.claude_input("just text"))
+    assert msg["message"]["content"] == [{"type": "text", "text": "just text"}]
+
+
+def test_claude_version_check(monkeypatch):
+    for out, rc, want in (("2.1.321 (Claude Code)\n", 0, True), ("2.1.242 (Claude Code)", 0, True),
+                          ("2.1.241 (Claude Code)", 0, False), ("", 1, False), ("garbage", 0, False)):
+        monkeypatch.setattr(reviewers.subprocess, "run",
+                            lambda *a, **k: types.SimpleNamespace(returncode=rc, stdout=out))
+        REAL_TTL_CHECK.cache_clear()
+        assert REAL_TTL_CHECK() is want, out
+
+    def missing(*a, **k):
+        raise FileNotFoundError("claude")
+    monkeypatch.setattr(reviewers.subprocess, "run", missing)
+    REAL_TTL_CHECK.cache_clear()
+    assert REAL_TTL_CHECK() is False
+    REAL_TTL_CHECK.cache_clear()
+
+
+def test_claude_attempts_share_one_empty_home(fake_home):
+    env, home = reviewers.reviewer_env("claude")
+    (pathlib.Path(home) / "leftover").write_text("x")
+    env2, home2 = reviewers.reviewer_env("claude")   # cleanup skipped: the next attempt wipes it
+    try:
+        assert home2 == home and not (pathlib.Path(home) / "leftover").exists()
+        assert os.stat(home).st_mode & 0o777 == 0o700
+    finally:
+        reviewers.cleanup_rev_home(home)
+    _, codex1 = reviewers.reviewer_env("codex")
+    _, codex2 = reviewers.reviewer_env("codex")
+    assert codex1 != codex2
+    reviewers.cleanup_rev_home(codex1), reviewers.cleanup_rev_home(codex2)
 
 
 def test_codex_turn_failed_is_a_failure(monkeypatch):
