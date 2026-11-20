@@ -62,7 +62,9 @@ def test_profile_flags_and_detection(monkeypatch, capsys):
     listing = {"FormalConjecturesUtil": [{"name": "Linters", "type": "dir"}]}
     monkeypatch.setattr(config, "_gh_contents", lambda repo, path, ref: listing.get(path))
     cfg = cli.load_config(cli.parse_args(["1", "--full-checks", "2"]), "o/formal-conjectures", "b")
-    assert cfg.profile == "formal-conjectures" and cfg.full_checks == 2
+    assert cfg.profile == "formal-conjectures" and cfg.full_checks == 2 and cfg.sources
+    cfg = cli.load_config(cli.parse_args(["1", "--no-sources"]), "o/formal-conjectures", "b")
+    assert cfg.profile == "formal-conjectures" and not cfg.sources
     assert "formal-conjectures layout detected" in capsys.readouterr().err
     cfg = cli.load_config(cli.parse_args(["1", "--profile", "default"]), "o/formal-conjectures", "b")
     assert cfg.profile == "default" and cfg.rubrics[0] == "correctness"

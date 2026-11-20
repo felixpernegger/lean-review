@@ -39,6 +39,8 @@ class Config:
     mode: str = "core"
     rubrics: list = dataclasses.field(default_factory=lambda: list(DEFAULT_RUBRICS))
     mathlib: bool = True
+    # Fetch the sources the PR cites (erdosproblems.com, arXiv, OEIS, Wikipedia) into the checkout.
+    sources: bool = False
     ci_check: str = "build"
     profile: str = ""
     # Most statements a rubric that reviews one statement at a time takes on in full; the rest go
@@ -78,7 +80,7 @@ class Config:
 
 # The keys a `.lean-review.toml` may set; the rest of Config is filled from overlays and profiles.
 TOML_KEYS = ("project", "description", "source_root", "namespace", "mode", "rubrics", "mathlib",
-             "ci_check", "profile", "full_checks")
+             "sources", "ci_check", "profile", "full_checks")
 
 
 def _loads(text, where=CONFIG_FILE):

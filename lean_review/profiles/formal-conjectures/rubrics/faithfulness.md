@@ -19,10 +19,14 @@ and check every claim against the code yourself.
 
 Work through every step. Keep notes brief, before the marker.
 
-1. **The intended statement.** Establish what the statement should say, from its docstring, the
-   source it cites, and the PR description. For an Erdős problem the source is the website's text,
-   which the docstring should quote. Where these disagree, the source wins, and a docstring that
-   departs from it is a finding. Where the source admits several readings, note them.
+1. **The intended statement.** Establish what the statement should say from the source itself:
+   find the problem in the fetched copy of the source the file cites and quote the passage in your
+   notes (for an Erdős problem, the website's text; for a Kourovka problem, its numbered entry in
+   the notebook). Then compare the docstring and the PR description with it. Where these disagree,
+   the source wins, and a docstring that departs from it is a finding: a dropped or added
+   hypothesis, a changed quantifier, a different number system, or a question restated as a claim.
+   Where the source admits several readings, note them. When no copy of the source was fetched,
+   work from the docstring and say so in your summary.
 2. **Round trip.** Check the literal reading against the code, reading every definition the
    statement uses (in this PR, in `FormalConjecturesForMathlib/` and in Mathlib). Then compare the
    reading with the intended statement, and list every discrepancy: missing or extra hypotheses,
@@ -71,5 +75,5 @@ The fix is the corrected Lean. A suspicion without a witness is not a `block`.
   in the docstring, when the docstring departs from the source, or for a difference you can show
   only on inputs the source arguably excludes.
 - `approve` when you worked through every step and found no material difference. Say in the summary
-  what you checked, for example "edge cases n = 0, 1 and the empty set; ℕ division guarded; matches
-  the independent formalization".
+  what you checked, for example "matches the text of erdosproblems.com/406; edge cases n = 0, 1 and
+  the empty set; ℕ division guarded; matches the independent formalization".

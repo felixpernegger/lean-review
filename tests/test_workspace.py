@@ -1,4 +1,5 @@
 from lean_review import workspace
+from lean_review.sources import SOURCES_DIR, Source
 
 
 def test_short_pr_has_no_cut_notices(ws):
@@ -45,6 +46,8 @@ def test_blind_checkouts(tmp_path):
     (code / ".lake" / "packages" / "mathlib" / "M.lean").write_text("/-- doc -/ def m := 1\n")
     (code / workspace.COMPLETE_DIR).mkdir()
     (code / workspace.COMPLETE_DIR / "description.md").write_text("secret prose")
+    (code / SOURCES_DIR).mkdir()
+    (code / SOURCES_DIR / "erdos-406.txt").write_text("the source's own wording")
     diff = new_file_diff("FC/406.lean", ERDOS)
     ws = workspace.Workspace(repo="o/r", pr=1, head="h", base="b", merge_base="b", root=code,
                              diff_text=diff, changed=["FC/406.lean"])
@@ -58,8 +61,22 @@ def test_blind_checkouts(tmp_path):
     assert form.count(workspace.REMOVED) == 2 and "erdosproblems.com/406" in form
     for blind in (ws.blind_read, ws.blind_formalize):
         assert not (blind / workspace.COMPLETE_DIR).exists()
+        assert not (blind / SOURCES_DIR).exists()
         assert (blind / "Other.lean").read_text() == "-- untouched\n"
         assert (blind / ".lake" / "packages" / "mathlib" / "M.lean").is_file()
     # The originals, which the copies hard-link, are untouched.
     assert (code / "FC" / "406.lean").read_text() == ERDOS
     assert (code / workspace.COMPLETE_DIR / "description.md").read_text() == "secret prose"
+
+
+def test_sources_note_in_the_shared_context(ws):
+    assert SOURCES_DIR not in workspace.base_context(ws, "Lib")      # not looked for
+    ws.sources = []
+    assert "cites no source the runner can fetch" in workspace.base_context(ws, "Lib")
+    ws.sources = [Source("erdos", "1", "F.lean", error="HTTP Error 404")]
+    assert "could not fetch any of the sources" in workspace.base_context(ws, "Lib")
+    ws.sources.append(Source("oeis", "A000045", "F.lean", files=[f"{SOURCES_DIR}/oeis.txt"]))
+    ctx = workspace.base_context(ws, "Lib")
+    assert f"`{SOURCES_DIR}/INDEX.md` lists them. Some could not be fetched" in ctx
+    # The runner's note comes before the author's description.
+    assert ctx.index(SOURCES_DIR) < ctx.index("PR description")

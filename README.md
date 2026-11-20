@@ -104,6 +104,7 @@ Rubric names for `--rubrics`: `correctness`, `reuse`, `attribution`, `api-design
 | `--kiro-model` | exact Kiro model id; default `gpt-5.6-sol`. `auto` is refused |
 | `--repo owner/name` | the repository; defaults to the one the current directory is a clone of |
 | `--no-mathlib` | skip fetching Mathlib source (faster; weaker `reuse`/`naming`) |
+| `--no-sources` | do not fetch the sources the PR cites (on by default in the formal-conjectures profile; see [Sources](#checking-against-the-source)) |
 | `--halt` / `--no-halt` | whether a `block` stops the remaining rubrics. Default: core mode runs them all; scoreboard mode stops (a later run picks up the rest) |
 | `--rerun-all` | scoreboard mode: re-run rubrics that are already green at this head |
 | `--config PATH` | use a local `.lean-review.toml` instead of the one on the PR's base branch |
@@ -147,8 +148,8 @@ score shows as `—`.
   comments in core mode. **stderr** holds progress, one `[rubric] reviewer → verdict` line per
   rubric, plus any errors.
 - **Run time.** Each rubric takes about 10–60 seconds, so all nine take a few minutes. The first
-  step also downloads the PR's code and, unless you pass `--no-mathlib`, the Mathlib source the
-  project pins. That is usually under a minute, but slower on a slow connection. The tool is
+  step also downloads the PR's code, the Mathlib source the project pins (unless you pass
+  `--no-mathlib`) and, in the formal-conjectures profile, the sources the PR cites. That is usually under a minute, but slower on a slow connection. The tool is
   non-interactive and never prompts, so allow at least 30 minutes before treating a run as hung.
   When run through `uvx`, uv's own build messages appear on stderr first.
 - **Disk.** Everything is downloaded into a fresh temporary directory, which is deleted when the
@@ -207,6 +208,7 @@ mode        = "core"           # or "scoreboard"
 rubrics     = ["correctness", "reuse", "attribution", "api-design", "generality",
                "placement", "naming", "documentation", "proof-quality"]
 mathlib     = true
+sources     = false            # fetch the sources the PR cites (erdosproblems.com, arXiv, OEIS, Wikipedia)
 ci_check    = "build"          # if this check passed on the head, reviewers are told the build is green
 profile     = ""               # optional: a built-in profile laid beneath this file, e.g. "formal-conjectures"
 full_checks = 6                # profiles with per-statement rubrics: most statements reviewed in full
@@ -267,6 +269,29 @@ hints, and the prove/disprove check is done by reasoning.
 [`lean_review/profiles/formal-conjectures/`](lean_review/profiles/formal-conjectures/README.md) has
 the details.
 
+### Checking against the source
+
+Reviewers have no network, so they cannot open the sources a PR cites. The profile therefore turns
+on `sources`: before the review, the runner fetches each cited source into the checkout under
+`.lean-review-sources/`, with an `INDEX.md` listing what it fetched and what it could not. Every
+rubric is told it is there, and the faithfulness, metadata, completeness and documentation rubrics
+check the docstrings, the statement and its category against the source's own text, not the
+author's account of it.
+
+| cited as | fetched |
+|---|---|
+| `erdosproblems.com/N`, or a file `ErdosProblems/N.lean` | the problem page as text, plus its entry (status, prize, tags) in the [erdosproblems database](https://github.com/teorth/erdosproblems) |
+| an arXiv link or `arXiv:ID`, or a file under `Arxiv/ID/` | the paper's TeX source, else arXiv's HTML rendering |
+| a file under `Kourovka/` | the latest Kourovka Notebook (arXiv 1401.0300) as TeX |
+| `oeis.org/AN`, or a file `OEIS/N.lean` | the OEIS entry in its text format |
+| `en.wikipedia.org/wiki/TITLE` | the article's wikitext |
+
+Citations are looked for in the changed files and the PR description, up to 8 sources. The runner
+never requests a URL the PR wrote: it keeps the identifier and builds the URL on the site's own
+host. A source that fails to download is listed in `INDEX.md`, and reviewers are told to say when
+they could not check against it. The blind stages do not see the sources. `--no-sources` turns
+fetching off.
+
 The rows of a review name the statement, e.g. `faithfulness · erdos_406`. A PR with 1 main
 statement and 3 variants costs 3 + 2 + 6 = 11 sessions. `--full-checks 0` reviews every statement
 the cheap way.
@@ -295,6 +320,8 @@ Placeholders such as `{{project}}` and `{{source_root}}` are filled from the con
   credential, so your personal `CLAUDE.md`, `AGENTS.md`, skills, plugins and other credentials
   never reach it.
 - **Read-only tools.** claude and kiro get only read, grep and glob: no shell, no writes, no web.
+  Sources a PR cites are fetched by the runner, from URLs it builds itself, before any reviewer
+  starts.
   codex runs in its own `read-only` sandbox. Its commands inherit no environment except `PATH`,
   which its Linux launcher needs to find the system `bwrap`, and a private temporary directory.
 - **Unforgeable verdict.** The verdict is read only from after a fresh random marker. A

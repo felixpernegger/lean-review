@@ -10,9 +10,12 @@ and are well-formed, so do not re-report that. You judge whether they are right.
   - `research open` only when no accepted solution exists.
   - `research solved` when a proof is known: published, accepted informally, or formalized. A
     result taken from a research paper is `research solved`, not `textbook`.
-  - Use what the docstrings, references and PR description say about the status. An Erdős problem
-    that the site or the docstring reports as solved is not `research open`. A `research solved`
-    statement's docstring or module docstring names who solved it.
+  - Take the status from the source itself when a copy was fetched, and otherwise from what the
+    docstrings, references and PR description say. An Erdős problem that the site or the docstring
+    reports as solved is not `research open`. A Kourovka problem marked as solved in the notebook,
+    or found only in its Archive of Solved Problems, is not `research open`; one in the main part
+    with no solution is not `research solved`. A `research solved` statement's docstring or module
+    docstring names who solved it.
   - `textbook` only for a special case or ingredient closely tied to a research problem.
   - `API` for basic theory about a new definition; `test` for unit tests of one.
 - **Questions.**

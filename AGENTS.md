@@ -143,6 +143,12 @@ uvx --from git+https://github.com/felixpernegger/lean-review lean-review N --rep
   the base `lake-manifest.json` pins no Mathlib (which prints a `note:` line instead). **No
   `fetching Mathlib` line means Mathlib was not used**, so `reuse` and `naming` could not grep it.
   Mention this when those rubrics ran.
+- with the formal-conjectures profile (or `sources = true`), `fetching sources: <label>, ……` lists
+  the sources the PR cites that the runner downloads for the reviewers, and `note: could not fetch
+  <label>: <reason>` names any that failed. `note: the PR cites no source lean-review can fetch`
+  means reviewers had only the docstrings to go on. Mention failed or missing sources: verdicts on
+  faithfulness, metadata and completeness then rest on the PR's own account of its source.
+  `--no-sources` turns fetching off, and no `fetching sources` line appears.
 - with the formal-conjectures profile:
   - `note: formal-conjectures layout detected; …` when it was picked automatically;
   - `[faithfulness] no changed main statement; skipped` when a per-statement rubric has nothing to
@@ -265,6 +271,7 @@ repo's default branch to take effect. For one run you can test it locally with
 | `lean_review/pr_diff.py` | three-dot diff via a bounded, credential-free bare git fetch |
 | `lean_review/reviewers.py` | claude/codex/kiro runners, clean-room HOME, prompt assembly (rubrics and blind stages), error classification |
 | `lean_review/engine.py` | the rubric loop: retry, reviewer fallback, halt on block, blind stages before a per-statement unit |
+| `lean_review/sources.py` | the sources a PR cites: recognised by pattern, fetched from URLs built on fixed hosts, staged with an `INDEX.md` |
 | `lean_review/statements.py` | changed declarations from the diff, per-statement units (`rubric:target`), junk-value hints |
 | `lean_review/verdict.py` | marker-gated verdict parsing, state rules |
 | `lean_review/state.py` | scoreboard case files, patch digest, carry-forward, thread replies |
@@ -309,6 +316,10 @@ Tests cover most of these. Keep them that way.
 - **Rubric prompts stay project-agnostic.** No project names or roadmap references; use
   placeholders. `tests/test_prompt.py` checks this. Prompts under `profiles/` are for one kind of
   project and may name its layout and conventions.
+- **Fetched sources come from URLs the runner builds.** `sources.py` keeps only an identifier from
+  a citation and builds the URL on a fixed host; it never requests a URL from the PR. Archives are
+  read in memory and only their text members written, flattened. The sources directory is dropped
+  from the blind copies. `tests/test_sources.py` and `tests/test_workspace.py` check this.
 - **Blind stages stay blind.** A stage prompt carries neither the shared protocol nor the PR block.
   The literal reading sees the statement with comments stripped. The independent formalization
   sees only the docstring. Each runs in its own blind copy of the checkout

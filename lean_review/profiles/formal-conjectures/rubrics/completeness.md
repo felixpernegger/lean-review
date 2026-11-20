@@ -5,8 +5,9 @@ Uses `request_changes`, never `block`. Whether each statement is faithful belong
 faithfulness angles.
 
 Judge against what the PR's own sources say: the docstrings, the module docstring, the references
-they cite, and the PR description. You cannot browse the web. Do not demand results you cannot
-point to in those sources, or in material you can read in the checkout.
+they cite (read their fetched copies when the runner has them), and the PR description. You cannot
+browse the web. Do not demand results you cannot point to in those sources, or in material you can
+read in the checkout.
 
 ## What to check
 

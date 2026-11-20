@@ -38,6 +38,9 @@ def parse_args(argv):
     ap.add_argument("--codex-model", default=reviewers.DEFAULT_MODELS["codex"])
     ap.add_argument("--kiro-model", default=reviewers.DEFAULT_MODELS["kiro"])
     ap.add_argument("--no-mathlib", action="store_true", help="skip the Mathlib source checkout")
+    ap.add_argument("--no-sources", action="store_true",
+                    help="do not fetch the sources the PR cites (on by default in the "
+                         "formal-conjectures profile)")
     halting = ap.add_mutually_exclusive_group()
     halting.add_argument("--halt", action="store_true",
                          help="stop at the first rubric that blocks (default in scoreboard mode)")
@@ -89,6 +92,8 @@ def load_config(a, repo, base):
             cfg.rubrics = [r.strip() for r in a.rubrics.split(",") if r.strip()]
         if a.no_mathlib:
             cfg.mathlib = False
+        if a.no_sources:
+            cfg.sources = False
         cfg.project = cfg.project or repo.split("/")[1]
         config.validate(cfg)
         for r in cfg.rubrics:
@@ -213,7 +218,8 @@ def main(argv=None):
         print(f"reviewing {repo}#{a.pr} @ {head[:12]} — mode {cfg.mode}, reviewers "
               f"{', '.join(providers)}", file=sys.stderr)
         try:
-            ws = workspace.build(repo, a.pr, work, mathlib=cfg.mathlib, ci_check=cfg.ci_check)
+            ws = workspace.build(repo, a.pr, work, mathlib=cfg.mathlib, ci_check=cfg.ci_check,
+                                 sources=cfg.sources)
         except RuntimeError as e:
             die(str(e))
         if not cfg.source_root:

@@ -16,6 +16,18 @@ Layout:
   Nothing there may use `sorry`, and its statements are proved.
 - `FormalConjecturesUtil/`: the attributes and linters.
 
+Check claims about a source against the source. Before the review the runner fetches the
+sources the PR cites (erdosproblems.com pages, arXiv papers as TeX, the Kourovka Notebook, OEIS
+entries, Wikipedia articles) into the checkout; the PR block below says whether it did and where.
+Where your angle depends on what a source says (the problem's wording, its status, its parts, the
+known results it names), find the passage there and work from it, not from the docstring's or the
+PR description's account of it. Name the source you checked in your summary, or say that it was
+not available.
+
+In the Kourovka Notebook's TeX, problem 5.59 is the entry `\textbf{5.59.}` (grep `[{ ]5\.59\.}`, so
+that 15.59 does not match). `\textbf{\zv 5.59.}` marks it solved, with the answer in the `\otv`
+comment after it; `\ai` marks an AI solution not yet confirmed, and such a problem is still open.
+
 Conventions every angle may rely on:
 
 - Every statement has exactly one category: `research open` (no accepted solution), `research

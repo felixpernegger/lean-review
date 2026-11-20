@@ -5,6 +5,9 @@ description = "a collection of Lean 4 statements of open conjectures and known r
 source_root = "."
 ci_check    = "Build project"
 full_checks = 6
+# Fetch the cited sources (erdosproblems.com, arXiv, OEIS, Wikipedia), so reviewers check the
+# docstrings and statements against the source itself, not the author's account of it.
+sources     = true
 # Block-capable angles first. `faithfulness` runs once per changed main statement and
 # `variant-faithfulness` once per batch of variants (see [expand]).
 rubrics     = ["faithfulness", "variant-faithfulness", "reuse", "definitions", "completeness",

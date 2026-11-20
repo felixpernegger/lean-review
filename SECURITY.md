@@ -30,6 +30,13 @@ stealing and no way to publish or approve on its own authority.
     the Linux launcher finds the system `bwrap`) and a private per-attempt `TMPDIR` are set back;
     neither carries a credential or grants a write.
   - kiro: trusted tools `read,grep,glob`.
+- **Cited sources are fetched by the runner, never from a URL the PR wrote.** With `sources`
+  on (the formal-conjectures profile), the runner keeps only an identifier from each citation (an
+  Erdős problem number, an arXiv id, an OEIS A-number, a Wikipedia title) and builds the HTTPS URL
+  on a fixed host itself, so a PR cannot point it at an internal address. Downloads are capped in
+  size; an arXiv archive is read in memory and only its text members are written, flattened into
+  one folder. The fetched text is staged as untrusted data, like the PR, and is removed from the
+  blind stages' copies of the checkout.
 - **Unforgeable verdict.**
   - A verdict is parsed only from after a fresh random marker. Parsing fails closed on a missing
     marker, malformed JSON or an out-of-set verdict.
@@ -52,3 +59,7 @@ stealing and no way to publish or approve on its own authority.
   and revoke it.
 - **R3: the Mathlib checkout is large and fetched by SHA from GitHub.** A tampered pin on the base
   branch is a maintainer problem, not a PR-author problem.
+- **R4: a fetched source is only as trustworthy as its site.** Anyone can edit a Wikipedia article,
+  and any page can carry injected text, so a source is handled as untrusted data like the PR. The
+  sites see which problems the operator's machine looked up: the identifiers a public PR cites, with
+  a User-Agent naming lean-review, and nothing else.

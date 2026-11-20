@@ -14,6 +14,7 @@ angle checks the docstring itself.
   - An Erdős problem's docstring quotes the problem text from erdosproblems.com verbatim, in the
     theorem's docstring, not the module docstring.
   - Other sources are quoted or closely paraphrased.
+  - Compare against the fetched copy of the source when there is one, not your memory of it.
   - A docstring that claims more than the statement delivers, or states a different problem than
     the source, is a finding.
 - **Definitions are documented.** A new definition's docstring says what the object is, including

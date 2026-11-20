@@ -70,6 +70,7 @@ def test_formal_conjectures_profile_layer():
     assert cfg.expand == {"faithfulness": "main", "variant-faithfulness": "variants"}
     assert cfg.stages["faithfulness"] == ["literal-reading", "independent-formalization"]
     assert cfg.ci_check == "Build project" and cfg.full_checks == 6
+    assert cfg.sources and not Config().sources
     for r in cfg.rubrics:
         assert cfg.rubric_text(r)
     assert "misformalization" in cfg.rubric_text("faithfulness").lower()

@@ -49,3 +49,14 @@ read-only tools, so step 3 does the prove/disprove check by reasoning and must g
 block.
 
 Variants get only steps 1 and 3 (the round trip): the cheapest strong setup in the study.
+
+## Checking against the source
+
+The profile sets `sources = true`, so the runner fetches the sources the PR cites into
+`.lean-review-sources/` before the review (`lean_review/sources.py`): erdosproblems.com pages with
+their entry in the erdosproblems database, arXiv papers as TeX, the latest Kourovka Notebook for
+`Kourovka/` files, OEIS entries and Wikipedia wikitext. The adjudication quotes the source's
+passage and compares the docstring with it before comparing the Lean, so a docstring that already
+departs from its source is caught, not inherited by both blind steps. `metadata` takes the status
+from the source (the database's `status` for Erdős problems; `\zv` and the Archive for Kourovka),
+and `completeness` reads it for parts and known results. The blind steps do not see the sources.

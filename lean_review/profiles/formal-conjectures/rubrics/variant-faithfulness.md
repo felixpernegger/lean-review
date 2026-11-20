@@ -14,8 +14,10 @@ code.
 
 For each statement:
 
-1. **The intended statement.** Establish it from the statement's docstring, the source the file
-   cites, the main statement it varies, and the PR description.
+1. **The intended statement.** Establish it from the source the file cites (its fetched copy,
+   when there is one: find the passage that states the variant, bound or special case), then from
+   the statement's docstring, the main statement it varies, and the PR description. Where the
+   docstring departs from the source, the source wins.
 2. **Round trip.** Check the literal reading against the code, reading every definition used. Then
    list every discrepancy between the reading and the intended statement. **Any difference on an
    edge case is material** unless the source clearly excludes that case: 0, 1, the empty set, a
