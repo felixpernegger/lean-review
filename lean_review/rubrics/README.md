@@ -30,3 +30,7 @@ block-capable integrity angles run first (cheapest, most-likely-to-block earlies
 | [`proof-quality`](proof-quality.md) | Automation-first, robust proofs? | no |
 
 Blocking angles are integrity checks. The rest use `request_changes` for fixable issues.
+
+Profiles in [`../profiles/`](../profiles/) bring rubric sets of their own for a kind of project,
+for example [`formal-conjectures`](../profiles/formal-conjectures/README.md), whose per-statement
+`faithfulness` rubric runs blind stages before it.

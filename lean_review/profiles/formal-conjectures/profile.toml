@@ -1,0 +1,24 @@
+# The formal-conjectures profile: Lean statements of open conjectures and known results, whose
+# proofs are `sorry` by design. See README.md beside this file.
+project     = "Formal Conjectures"
+description = "a collection of Lean 4 statements of open conjectures and known results, downstream of Mathlib"
+source_root = "."
+ci_check    = "Build project"
+full_checks = 6
+# Block-capable angles first. `faithfulness` runs once per changed main statement and
+# `variant-faithfulness` once per batch of variants (see [expand]).
+rubrics     = ["faithfulness", "variant-faithfulness", "reuse", "definitions", "completeness",
+               "metadata", "documentation", "proof-quality"]
+
+[expand]
+faithfulness = "main"
+variant-faithfulness = "variants"
+
+# Blind steps run before the rubric, each by a separate session that does not see the PR's text.
+[stages]
+faithfulness = ["literal-reading", "independent-formalization"]
+variant-faithfulness = ["literal-reading"]
+
+[references]
+faithfulness = ["references/misformalization-checklist.md"]
+variant-faithfulness = ["references/misformalization-checklist.md"]

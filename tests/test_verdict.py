@@ -33,3 +33,14 @@ def test_contest_watermark():
     assert has_new_contest(cf)
     cf["last_reply_seen"] = 9
     assert not has_new_contest(cf)
+
+
+def test_scores_are_validated_not_required():
+    v = extract_verdict(f'{M}\n{{"verdict": "block", "confidence": 9, "importance": "10"}}', M)
+    assert (v["confidence"], v["importance"]) == (9, 10)
+    v = extract_verdict(f'{M}\n{{"verdict": "approve", "confidence": 7.0, "importance": 4}}', M)
+    assert (v["confidence"], v["importance"]) == (7, None)          # no importance on approve
+    v = extract_verdict(f'{M}\n{{"verdict": "request_changes", "confidence": 11, "importance": true}}', M)
+    assert v["verdict"] == "request_changes" and (v["confidence"], v["importance"]) == (None, None)
+    v = extract_verdict(f'{M}\n{{"verdict": "request_changes"}}', M)
+    assert (v["confidence"], v["importance"]) == (None, None)

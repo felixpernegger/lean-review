@@ -3,7 +3,7 @@ the PR description, and optionally the Mathlib source the base branch pins."""
 
 import base64, dataclasses, json, os, pathlib, shutil, subprocess, sys
 
-from . import pr_diff
+from . import pr_diff, statements
 from .config import ConfigError, _gh_contents
 
 MATHLIB_REMOTE = "https://github.com/leanprover-community/mathlib4"
@@ -32,6 +32,11 @@ class Workspace:
     # Checkout-relative paths of the complete diff and description, set only when cut in the prompt.
     complete_diff: str = ""
     complete_description: str = ""
+    # Blind copies of `root` for the stages that must not see part of the PR (see build_blind).
+    blind_read: pathlib.Path = None
+    blind_formalize: pathlib.Path = None
+    # The declarations the PR adds or changes (statements.changed_declarations), when looked for.
+    changed_decls: list = dataclasses.field(default_factory=list)
 
     @property
     def description_text(self):
@@ -217,3 +222,59 @@ def base_context(ws, source_root):
     else:
         lines.append(f"\n## Diff\n```diff\n{diff}\n```")
     return "\n".join(lines)
+
+
+REMOVED = "-- (declaration removed for an independent formalization)"
+
+
+def _blind_copy(src, dest, rewrite):
+    """`dest`: a hard-linked copy of the checkout `src` (Mathlib included, at no disk cost), with
+    the runner's staged PR text removed and each file in `rewrite` (relative path -> new text)
+    replaced. A rewritten file is unlinked first, so the original it shares an inode with is never
+    written."""
+    def link(a, b):
+        try:
+            os.link(a, b)
+        except OSError:  # a filesystem without hard links
+            shutil.copy2(a, b)
+    shutil.copytree(src, dest, symlinks=True, copy_function=link)
+    shutil.rmtree(dest / COMPLETE_DIR, ignore_errors=True)
+    if os.path.lexists(dest / COMPLETE_DIR):
+        os.unlink(dest / COMPLETE_DIR)
+    for rel, text in rewrite.items():
+        f = dest / rel
+        if f.is_symlink() or not f.is_file():
+            continue
+        f.unlink()
+        f.write_text(text, encoding="utf-8")
+
+
+def build_blind(ws, decls):
+    """Two blind views of the checkout, for the stages run before a per-statement rubric:
+
+    - `blind_read`: the changed Lean files without comments and docstrings, so a literal reading
+      of a statement cannot borrow its intended meaning from the prose.
+    - `blind_formalize`: the changed Lean files without the declarations the PR adds or changes,
+      so an independent formalization cannot copy the PR's.
+
+    Both drop the staged PR description and diff."""
+    stripped, removed = {}, {}
+    by_path = {}
+    for d in decls:
+        by_path.setdefault(d.path, []).append(d)
+    for rel in ws.changed:
+        f = ws.root / rel
+        if not rel.endswith(".lean") or f.is_symlink() or not f.is_file():
+            continue
+        text = f.read_text(encoding="utf-8", errors="replace")
+        stripped[rel] = statements.strip_comments(text)
+        lines = text.split("\n")
+        for d in sorted(by_path.get(rel, []), key=lambda d: d.start, reverse=True):
+            lines[d.start - 1:d.end] = [REMOVED]
+        removed[rel] = "\n".join(lines)
+    ws.blind_read = ws.root.parent / "blind-read"
+    ws.blind_formalize = ws.root.parent / "blind-formalize"
+    for d in (ws.blind_read, ws.blind_formalize):
+        shutil.rmtree(d, ignore_errors=True)
+    _blind_copy(ws.root, ws.blind_read, stripped)
+    _blind_copy(ws.root, ws.blind_formalize, removed)

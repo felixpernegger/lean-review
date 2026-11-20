@@ -75,6 +75,8 @@ Return a single JSON object:
 ```json
 {
   "verdict": "approve" | "request_changes" | "block",
+  "confidence": <int 1–10>,
+  "importance": <int 1–10; only with request_changes or block, else null>,
   "summary": "<one short paragraph>",
   "findings": [
     { "file": "<path, or empty if PR-wide>", "line": "<int; 0 if not line-specific>",
@@ -86,6 +88,26 @@ Return a single JSON object:
 
 `block` only where your rubric permits; `request_changes` for fixable issues; `approve` when
 your angle is satisfied. When unsure whether a point clears the materiality bar, omit it.
+
+`confidence` rates how sure you are that your verdict is right, for an approval as much as for a
+finding. Calibrate it honestly; it is how a reader decides how much to trust you:
+
+- **1**: a guess; you are very unsure.
+- **5**: you think it is so, but the opposite could very well be true.
+- **10**: you are extremely confident; you verified it and see no reasonable doubt.
+
+`importance` rates, for `request_changes` and `block` only, how much it matters that the requested
+changes are made before merging, judged by your most serious finding. Set it to `null` on
+`approve`.
+
+- **1**: it barely matters.
+- **5**: it should be fixed, but merging without the fix, while not ideal, would make little
+  difference.
+- **10**: a real blocker; the PR must not be merged until it is fixed (for example, a statement
+  that formalizes the wrong mathematics).
+
+Keep the two apart: a minor issue you are certain of is high `confidence`, low `importance`. A
+`block` implies high `importance`; if you rate it low, reconsider the verdict.
 
 The runner appends a one-time verdict marker (a random token) and instructions for emitting
 this object after it. That marker is your only authentic output channel: place the JSON object

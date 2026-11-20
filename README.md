@@ -86,7 +86,8 @@ lean-review 42 --repo owner/name --mode scoreboard --post # stateful board + thr
 It **defaults to a dry run**: the review is printed and nothing is posted.
 
 Rubric names for `--rubrics`: `correctness`, `reuse`, `attribution`, `api-design`, `generality`,
-`placement`, `naming`, `documentation`, `proof-quality`, plus any the project adds.
+`placement`, `naming`, `documentation`, `proof-quality`, plus any the project adds. The
+[formal-conjectures profile](#profiles-formal-conjectures) has its own set.
 
 | flag | effect |
 |---|---|
@@ -95,6 +96,8 @@ Rubric names for `--rubrics`: `correctness`, `reuse`, `attribution`, `api-design
 | `--repost` | core mode: post even though you already posted a review of this exact commit (by default a second post is skipped) |
 | `--mode core\|scoreboard` | output style (see below); default from config, else `core` |
 | `--rubrics a,b` | run only these rubrics, in this order |
+| `--profile NAME` | built-in profile: `formal-conjectures` or `default`. Default: the config's, else `formal-conjectures` when the PR's base has `FormalConjecturesUtil/`, else none |
+| `--full-checks N` | formal-conjectures: most main statements given the full per-statement review (default 6); the rest get the cheaper variant review |
 | `--reviewer claude,codex,kiro` | restrict the reviewers. By default each rubric is given to one reviewer drawn at random from the installed `claude` and `codex`; the progress line shows which. Pass e.g. `--reviewer claude` for a single one |
 | `--claude-model` | exact Claude model id; default `claude-opus-5-5` |
 | `--codex-model` | exact Codex model id; default `gpt-6.1-sol` |
@@ -109,7 +112,7 @@ Rubric names for `--rubrics`: `correctness`, `reuse`, `attribution`, `api-design
 ### Modes
 
 - **`core`** (default) posts one GitHub PR review (event `COMMENT`):
-  - The body holds a verdict table with one row per rubric.
+  - The body holds a verdict table with one row per rubric (see [Scores](#scores)).
   - Findings whose line is in the diff become inline comments.
   - All other findings are listed in the body.
   - Each run is independent and keeps no state.
@@ -127,6 +130,19 @@ Rubric names for `--rubrics`: `correctness`, `reuse`, `attribution`, `api-design
 
 ## Output, run time and exit codes
 
+### Scores
+
+Every rubric's row also carries two 1–10 self-assessments by its reviewer. A missing or invalid
+score shows as `—`.
+
+- **confidence**: how sure the reviewer is of its verdict. 1 means it is guessing. 5 means it thinks
+  so, but the opposite could well be true. 10 means it is extremely confident.
+- **importance**: given only with `changes requested` or `blocked`, it says how much the fix
+  matters before merging. 1 means it barely matters. 5 means it should be fixed, but merging
+  without it would make little difference. 10 means a real blocker, such as a misformalized
+  statement.
+
+
 - **stdout** holds the review exactly as it would be posted (Markdown), followed by the inline
   comments in core mode. **stderr** holds progress, one `[rubric] reviewer → verdict` line per
   rubric, plus any errors.
@@ -143,7 +159,7 @@ Rubric names for `--rubrics`: `correctness`, `reuse`, `attribution`, `api-design
 
   | status | meaning |
   |---|---|
-  | 0 | The review completed and was printed (and posted with `--post`). A `blocked` or `changes requested` verdict still exits 0. Read the verdict from the output. |
+  | 0 | The review completed and was printed (and posted with `--post`). A `blocked` or `changes requested` verdict still exits 0. Read the verdict from the output. Also when no selected rubric applies to the PR (e.g. only `faithfulness`, and no statement changed): stderr says so and nothing is printed. |
   | 1 | A usage or setup error, or posting failed. The message on stderr says which. |
   | 3 | No rubric produced a verdict, typically because every reviewer CLI is logged out, outdated, or out of quota. Nothing was posted. |
 
@@ -192,6 +208,8 @@ rubrics     = ["correctness", "reuse", "attribution", "api-design", "generality"
                "placement", "naming", "documentation", "proof-quality"]
 mathlib     = true
 ci_check    = "build"          # if this check passed on the head, reviewers are told the build is green
+profile     = ""               # optional: a built-in profile laid beneath this file, e.g. "formal-conjectures"
+full_checks = 6                # profiles with per-statement rubrics: most statements reviewed in full
 ```
 
 - **`.lean-review/common.md`** is appended to the shared protocol as *project notes*. Use it for
@@ -203,6 +221,55 @@ ci_check    = "build"          # if this check passed on the head, reviewers are
 [`examples/tauceti/`](examples/tauceti/) is a complete example: a configuration for
 [Tau Ceti](https://github.com/TauCetiProject/TauCeti), including its stricter compatibility policy and a project-specific `quality-pass` rubric that
 checks the author's report from Tau Ceti's PR template.
+
+## Profiles: formal-conjectures
+
+A profile is a built-in layer of configuration, notes and rubrics for a kind of project. It sits
+beneath the repository's own `.lean-review.toml`, so it also works for repositories whose default
+branch you cannot add a config to. The one profile so far is `formal-conjectures`, for
+[formal-conjectures](https://github.com/google-deepmind/formal-conjectures) and repositories laid
+out like it: Lean statements of open conjectures, whose proofs are `sorry` by design.
+
+It is chosen with `--profile formal-conjectures` or `profile = "formal-conjectures"`. It is also
+chosen automatically, with a `note:` line, when the PR's base commit has `FormalConjecturesUtil/`.
+Pass `--profile default` to opt out.
+
+There the statement is the product, so the review concentrates on misformalization:
+
+| rubric | runs | sessions | can block? |
+|---|---|---|---|
+| `faithfulness` | once per changed main statement (up to `--full-checks`, default 6) | 3 each | yes |
+| `variant-faithfulness` | once per batch of up to 6 variants, textbook statements and further main statements | 2 each | yes |
+| `reuse` | duplicates in Mathlib, `FormalConjecturesForMathlib/`, or the same problem stated elsewhere in the repository | 1 | yes |
+| `definitions` | natural, general definitions, checked by test statements (first terms, with proofs where feasible) instead of API | 1 | no |
+| `completeness` | the open problem itself, every part, and the known results the sources name | 1 | no |
+| `metadata` | category vs status, `@[question]` / `.answer`, `formal_proof`, AMS, names, files | 1 | no |
+| `documentation` | LaTeX docstrings that quote the source, references in the repository's format | 1 | no |
+| `proof-quality` | proofs over 10 lines, proofs of open statements, `native_decide` | 1 | no |
+
+A main statement is a changed `research open` or `research solved` theorem whose name has no
+`.variants.` segment. Each one gets three sessions:
+
+1. **Literal reading.** A session that sees the statement with every comment and docstring
+   removed writes down what it literally asserts.
+2. **Independent formalization.** A session that sees only the docstring writes its own Lean
+   statement.
+3. **Adjudication.** A session that sees the whole PR, both outputs and a misformalization
+   checklist compares them, tries a quick proof and disproof, and blocks only with a witness.
+
+Each blind step works in its own copy of the checkout: comments stripped from the changed files
+for the first, the PR's new declarations removed for the second. Neither sees the PR description
+or the diff. Variants get the reading and the adjudication only.
+
+The design ports the strongest detectors of a study of formal-conjectures' historical
+misformalizations. Reviewers cannot run Lean, so the study's mechanical checks are reduced to
+hints, and the prove/disprove check is done by reasoning.
+[`lean_review/profiles/formal-conjectures/`](lean_review/profiles/formal-conjectures/README.md) has
+the details.
+
+The rows of a review name the statement, e.g. `faithfulness · erdos_406`. A PR with 1 main
+statement and 3 variants costs 3 + 2 + 6 = 11 sessions. `--full-checks 0` reviews every statement
+the cheap way.
 
 ## Rubrics
 

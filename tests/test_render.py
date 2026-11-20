@@ -33,6 +33,7 @@ def test_meta_cannot_be_closed_by_model_text():
 def test_core_review_inline_vs_body(ws):
     state_map = {
         "correctness": {"verdict": "request_changes", "provider": "claude", "model": "m",
+                        "confidence": 8, "importance": 3,
                         "summary": "s|ummary", "findings": [
                             {"file": "Lib/Foo.lean", "line": 2, "issue": "inline me", "fix": "f"},
                             {"file": "Lib/Foo.lean", "line": 40, "issue": "outside hunk"},
@@ -44,6 +45,8 @@ def test_core_review_inline_vs_body(ws):
                          "body": "**correctness** — inline me\n\n**Fix:** f\n\n" + render.CREDIT}]
     assert "outside hunk" in body and "pr-wide" in body and "inline me" not in body
     assert "s\\|ummary" in body and "not run" in body
+    assert "| changes requested | 8/10 | 3/10 | `claude/m` |" in body
+    assert "| approved | — | — | `codex/default` |" in body
     assert body.startswith(render.REVIEW_MARKER)
 
 
@@ -68,3 +71,31 @@ def test_scoreboard_round_trips_state(ws):
     board_id, loaded = load_board([comment], "me")
     assert board_id == 1 and loaded["reuse"]["verdict"] == "block"
     assert load_board([comment], "someone-else") == (None, {})
+
+
+def test_units_render_with_labels_and_round_trip_their_marker(ws):
+    from lean_review.state import thread_replies
+    cf = {"rubric": "faithfulness:erdos_406", "verdict": "block", "provider": "claude",
+          "summary": "vacuous", "findings": [{"file": "Lib/Foo.lean", "line": 2, "issue": "i"}]}
+    body, comments = render_core_review(["faithfulness:erdos_406"], {cf["rubric"]: cf}, ws, "blocked")
+    assert "| faithfulness · erdos_406 |" in body
+    assert comments[0]["body"].startswith("**faithfulness · erdos_406** — i")
+    thread = render.render_thread(cf, ws)
+    root = {"id": 1, "in_reply_to_id": None, "body": thread}
+    reply = {"id": 2, "in_reply_to_id": 1, "body": "this is fine", "user": {"login": "a"}}
+    assert list(thread_replies([root, reply])) == ["faithfulness:erdos_406"]
+    plain = {"id": 3, "in_reply_to_id": None, "body": "<!--lean-review:rubric:naming-->"}
+    assert list(thread_replies([plain, {"id": 4, "in_reply_to_id": 3, "body": "x"}])) == ["naming"]
+
+
+def test_scores_render_in_thread_and_scoreboard_and_persist(ws):
+    from lean_review.state import load_board
+    cf = {"rubric": "reuse", "verdict": "block", "provider": "claude", "summary": "s",
+          "confidence": 6, "importance": 10, "findings": []}
+    assert "confidence 6/10 · importance 10/10" in render.render_thread(cf, ws)
+    stale = {"rubric": "naming", "verdict": "request_changes", "confidence": "<b>", "importance": 99}
+    state_map = {"reuse": cf, "naming": stale}
+    body = render.render_scoreboard(["reuse", "naming"], state_map, ws, "blocked", compact(state_map))
+    assert "| 6/10 | 10/10 |" in body and "| — | — |" in body
+    _, loaded = load_board([{"id": 1, "user": {"login": "me"}, "body": body}], "me")
+    assert (loaded["reuse"]["confidence"], loaded["reuse"]["importance"]) == (6, 10)

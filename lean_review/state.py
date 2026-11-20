@@ -16,7 +16,8 @@ PATCH_DIGEST_VERSION = "v1"
 
 # The case-file fields persisted in the board, and the per-finding fields kept (capped) so the
 # board stays well under GitHub's 65536-character comment limit.
-_KEEP = ("verdict", "provider", "model", "summary", "findings", "reviewed_sha", "approved_sha",
+_KEEP = ("verdict", "confidence", "importance", "provider", "model", "summary", "findings",
+         "reviewed_sha", "approved_sha",
          "approved_digest", "rubrics_version", "carried_from_sha", "thread", "last_reply_seen")
 _FINDING_KEEP = {"file": 300, "line": None, "issue": 600, "fix": 400, "evidence": 300}
 
@@ -54,11 +55,15 @@ def rubrics_version(cfg):
     rubrics). An approval carries to a new head only under the same version."""
     from .config import RUBRICS_DIR
     h = hashlib.sha256((RUBRICS_DIR / "_common.md").read_bytes())
-    h.update(cfg.notes.encode())
+    h.update(cfg.profile_notes.encode() + b"\0" + cfg.notes.encode())
     for name in cfg.rubrics:
         h.update(name.encode() + b"\0" + cfg.rubric_text(name).encode())
+        for stage in cfg.stages.get(name, []):
+            h.update(stage.encode() + b"\0" + cfg.stage_texts[stage].encode())
     for p in sorted(RUBRICS_DIR.glob("references/*.md")):
         h.update(p.read_bytes())
+    for rel, text in sorted(cfg.reference_texts.items()):
+        h.update(rel.encode() + b"\0" + text.encode())
     h.update(json.dumps(cfg.placeholders(), sort_keys=True).encode())
     return h.hexdigest()[:16]
 
@@ -88,7 +93,8 @@ def update_case_file(state_map, rubric, res, head_sha, digest=None, version=None
     verdict = v.get("verdict") or "error"
     cf = state_map.setdefault(rubric, {})
     cf.update(rubric=rubric, provider=res.get("provider"), model=res.get("model"),
-              verdict=verdict, summary=v.get("summary", "") or "",
+              verdict=verdict, confidence=v.get("confidence"), importance=v.get("importance"),
+              summary=v.get("summary", "") or "",
               findings=v.get("findings") or [], reviewed_sha=head_sha, rubrics_version=version,
               error_kind=res.get("error_kind"))
     cf.pop("carried_from_sha", None)

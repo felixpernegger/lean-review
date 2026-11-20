@@ -62,3 +62,54 @@ def test_template():
     text = "A {{project}}.\n<!-- if namespace -->\nns {{namespace}}\n<!-- end -->\nZ"
     assert render_template(text, {"project": "P", "namespace": "N"}) == "A P.\nns N\nZ"
     assert render_template(text, {"project": "P", "namespace": ""}) == "A P.\nZ"
+
+
+def test_formal_conjectures_profile_layer():
+    cfg = config.apply_profile(Config(), "formal-conjectures", "flag")
+    assert cfg.rubrics[:2] == ["faithfulness", "variant-faithfulness"]
+    assert cfg.expand == {"faithfulness": "main", "variant-faithfulness": "variants"}
+    assert cfg.stages["faithfulness"] == ["literal-reading", "independent-formalization"]
+    assert cfg.ci_check == "Build project" and cfg.full_checks == 6
+    for r in cfg.rubrics:
+        assert cfg.rubric_text(r)
+    assert "misformalization" in cfg.rubric_text("faithfulness").lower()
+    # Built-in rubrics outside the profile's list stay usable.
+    assert cfg.rubric_text("naming") == Config().rubric_text("naming")
+
+
+def test_repository_config_sits_above_its_profile(tmp_path):
+    (tmp_path / ".lean-review.toml").write_text(
+        'profile = "formal-conjectures"\nrubrics = ["faithfulness", "house"]\nfull_checks = 2\n')
+    (tmp_path / ".lean-review" / "rubrics").mkdir(parents=True)
+    (tmp_path / ".lean-review" / "common.md").write_text("HOUSE NOTES")
+    (tmp_path / ".lean-review" / "rubrics" / "house.md").write_text("# House")
+    (tmp_path / ".lean-review" / "rubrics" / "faithfulness.md").write_text("# Ours")
+    cfg = config.load_local(tmp_path / ".lean-review.toml")
+    assert cfg.profile == "formal-conjectures" and cfg.profile_source == "config"
+    assert cfg.rubrics == ["faithfulness", "house"] and cfg.full_checks == 2
+    assert cfg.rubric_text("faithfulness") == "# Ours"
+    assert "Formal Conjectures" in cfg.project and cfg.notes == "HOUSE NOTES"
+    assert "What this repository is" in cfg.profile_notes
+
+
+def test_profile_flag_wins_over_config(tmp_path):
+    (tmp_path / ".lean-review.toml").write_text('profile = "formal-conjectures"\n')
+    cfg = config.load_local(tmp_path / ".lean-review.toml", "default")
+    assert cfg.profile == "default" and cfg.rubrics == config.DEFAULT_RUBRICS and not cfg.expand
+
+
+def test_unknown_profile_and_bad_full_checks():
+    for bad in ('profile = "nope"', "full_checks = true", "full_checks = -1"):
+        with pytest.raises(ConfigError):
+            parse(bad)
+
+
+def test_profile_detection(monkeypatch):
+    listing = {"FormalConjecturesUtil": [{"name": "Attributes", "type": "dir"}]}
+    monkeypatch.setattr(config, "_gh_contents", lambda repo, path, ref: listing.get(path))
+    cfg = config.load_remote("o/r", "base", detect=True)
+    assert cfg.profile == "formal-conjectures" and cfg.profile_source == "detected"
+    assert config.load_remote("o/r", "base", "default", detect=True).profile == "default"
+    assert config.load_remote("o/r", "base").profile == ""
+    listing.clear()
+    assert config.load_remote("o/r", "base", detect=True).profile == ""

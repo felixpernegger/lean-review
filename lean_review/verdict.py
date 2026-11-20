@@ -14,6 +14,33 @@ def extract_verdict(text, marker):
     echoed by the model — is ignored. Fail closed (None) on a missing marker, unparseable JSON,
     or a verdict outside the allowed set; the caller renders that as an `error` verdict.
     """
+    d = extract_marked_json(text, marker)
+    if d is None or d.get("verdict") not in VERDICTS:
+        return None
+    if not isinstance(d.get("findings"), list):
+        d["findings"] = []
+    d["findings"] = [f for f in d["findings"] if isinstance(f, dict)]
+    # The scores are advisory: a missing or malformed one becomes None, never a lost verdict.
+    d["confidence"] = score(d.get("confidence"))
+    d["importance"] = None if d["verdict"] == "approve" else score(d.get("importance"))
+    return d
+
+
+def score(value):
+    """A 1–10 self-assessment from the model as an int, or None if it is not one. Integral floats
+    and digit strings are accepted; booleans, fractions and anything out of range are not."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, str) and value.strip().isdigit():
+        value = int(value.strip())
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    return value if isinstance(value, int) and 1 <= value <= 10 else None
+
+
+def extract_marked_json(text, marker):
+    """The JSON object after the last occurrence of the one-time `marker`, or None (fail closed).
+    The channel of every structured model output: a verdict, or a blind stage's result."""
     if not text or marker not in text:
         return None
     tail = text.rsplit(marker, 1)[1]
@@ -24,12 +51,7 @@ def extract_verdict(text, marker):
         d = json.loads(m.group(0))
     except Exception:
         return None
-    if not isinstance(d, dict) or d.get("verdict") not in VERDICTS:
-        return None
-    if not isinstance(d.get("findings"), list):
-        d["findings"] = []
-    d["findings"] = [f for f in d["findings"] if isinstance(f, dict)]
-    return d
+    return d if isinstance(d, dict) else None
 
 
 def state_of(cf, head_sha):

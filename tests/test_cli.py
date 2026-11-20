@@ -14,8 +14,8 @@ def test_scoreboard_queue():
           "contested": {"verdict": "request_changes", "reviewed_sha": H,
                         "author_replies": [{"id": 9}], "last_reply_seen": 3},
           "errored": {"verdict": "error", "reviewed_sha": H}}
-    assert cli.select_scoreboard_queue(cfg, sm, H, False) == ["stale", "contested", "errored", "new"]
-    assert cli.select_scoreboard_queue(cfg, sm, H, True) == cfg.rubrics
+    assert cli.select_scoreboard_queue(cfg.rubrics, sm, H, False) == ["stale", "contested", "errored", "new"]
+    assert cli.select_scoreboard_queue(cfg.rubrics, sm, H, True) == cfg.rubrics
 
 
 def test_halt_defaults_by_mode():
@@ -55,3 +55,18 @@ def test_publish_core_conditions(monkeypatch, ws):
     assert len(calls) == 2
     with pytest.raises(SystemExit):
         args("--post", "--post-unless-approved")
+
+
+def test_profile_flags_and_detection(monkeypatch, capsys):
+    from lean_review import config
+    listing = {"FormalConjecturesUtil": [{"name": "Linters", "type": "dir"}]}
+    monkeypatch.setattr(config, "_gh_contents", lambda repo, path, ref: listing.get(path))
+    cfg = cli.load_config(cli.parse_args(["1", "--full-checks", "2"]), "o/formal-conjectures", "b")
+    assert cfg.profile == "formal-conjectures" and cfg.full_checks == 2
+    assert "formal-conjectures layout detected" in capsys.readouterr().err
+    cfg = cli.load_config(cli.parse_args(["1", "--profile", "default"]), "o/formal-conjectures", "b")
+    assert cfg.profile == "default" and cfg.rubrics[0] == "correctness"
+    with pytest.raises(SystemExit):
+        cli.parse_args(["1", "--profile", "nope"])
+    with pytest.raises(SystemExit):
+        cli.load_config(cli.parse_args(["1", "--full-checks", "-1"]), "o/r", "b")

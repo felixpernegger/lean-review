@@ -4,12 +4,14 @@ the scoreboard-mode board, per-rubric threads and contest replies."""
 import datetime, json, re
 
 from . import __version__
-from .verdict import newest_reply_id, state_of
+from .statements import unit_label
+from .verdict import newest_reply_id, score, state_of
 
 REVIEW_MARKER = "<!--lean-review:review-->"
 BOARD_MARKER = "<!--lean-review:scoreboard-->"
 REPLY_MARKER = "<!--lean-review:reply-->"
-RUBRIC_MARKER_RE = re.compile(r"<!--lean-review:rubric:([a-z][a-z0-9-]*)-->")
+# A rubric, or one unit of an expanding rubric (`rubric:target`, see statements.expand_units).
+RUBRIC_MARKER_RE = re.compile(r"<!--lean-review:rubric:([a-z][a-z0-9-]*(?::[^\s<>]+?)?)-->")
 META_RE = re.compile(r"<!--lean-review:meta (.*?)-->", re.S)
 CREDIT = "<sub>Make AI reviews like this with [lean-review](https://github.com/felixpernegger/lean-review).</sub>"
 
@@ -43,6 +45,17 @@ def _cell(text):
 
 def _judge(cf):
     return f"`{cf.get('provider')}/{cf.get('model') or 'default'}`" if cf.get("provider") else "—"
+
+
+def _score(cf, key):
+    """A case file's 1–10 score as `n/10`, or `—`. Re-validated here because a board written by an
+    older version (or a hand-edited state) may carry anything."""
+    n = score(cf.get(key))
+    return f"{n}/10" if n is not None else "—"
+
+
+def _scores(cf):
+    return f"{_score(cf, 'confidence')} | {_score(cf, 'importance')}"
 
 
 def _loc(f):
@@ -100,16 +113,19 @@ def render_core_review(rubrics, state_map, ws, overall):
     become inline comments; the rest are listed in the body."""
     anchorable = diff_right_lines(ws.diff_text)
     lines = [REVIEW_MARKER, f"## lean-review — {overall}", "",
-             "| | rubric | verdict | reviewer | summary |", "|---|---|---|---|---|"]
+             "| | rubric | verdict | confidence | importance | reviewer | summary |",
+             "|---|---|---|---|---|---|---|"]
     comments, unanchored = [], []
     for r in rubrics:
         cf = state_map.get(r) or {}
         s = state_of(cf, ws.head)
-        lines.append(f"| {ICON[s]} | {r} | {WORD[s]} | {_judge(cf)} | {_cell(cf.get('summary'))} |")
+        label = _cell(unit_label(r))
+        lines.append(f"| {ICON[s]} | {label} | {WORD[s]} | {_scores(cf)} | {_judge(cf)} | "
+                     f"{_cell(cf.get('summary'))} |")
         for f in cf.get("findings") or []:
             path, n = f.get("file") or "", _as_line(f.get("line"))
             if n and n in anchorable.get(path, ()):
-                body = [f"**{r}** — {sanitize(f.get('issue', ''))}"]
+                body = [f"**{label}** — {sanitize(f.get('issue', ''))}"]
                 if f.get("fix"):
                     body.append(f"**Fix:** {sanitize(f['fix'])}")
                 if f.get("evidence"):
@@ -118,7 +134,7 @@ def render_core_review(rubrics, state_map, ws, overall):
                 comments.append({"path": path, "line": n, "side": "RIGHT",
                                  "body": "\n\n".join(body)})
             else:
-                unanchored.append((r, f))
+                unanchored.append((label, f))
     if unanchored:
         lines += ["", "### Findings outside the diff"]
         for r, f in unanchored:
@@ -136,7 +152,8 @@ def render_thread(cf, ws):
     emoji = {"block": "⛔", "request_changes": "🟡"}
     v = cf.get("verdict", "error")
     lines = [f"<!--lean-review:rubric:{cf['rubric']}-->",
-             f"### {emoji.get(v, '•')} {cf['rubric']} — {v}  {_judge(cf)}", "",
+             f"### {emoji.get(v, '•')} {_cell(unit_label(cf['rubric']))} — {v}  {_judge(cf)}",
+             f"confidence {_score(cf, 'confidence')} · importance {_score(cf, 'importance')}", "",
              sanitize(cf.get("summary", "")), ""]
     lines += [_finding_line(f) for f in cf.get("findings") or []]
     lines += ["", "Reply in this thread to contest a finding; the next `lean-review --mode "
@@ -152,7 +169,8 @@ def render_contest_reply(cf, head_sha):
     else:
         why = _cell(cf.get("summary")) or "the prior finding still holds"
         verdict = f"the finding stands — {why}"
-    return (f"{REPLY_MARKER}\n**Re: your reply on `{rubric}`:** re-reviewed on `{head_sha[:7]}`; "
+    return (f"{REPLY_MARKER}\n**Re: your reply on `{_cell(unit_label(rubric))}`:** re-reviewed "
+            f"on `{head_sha[:7]}`; "
             f"{verdict}\n\n<sub>{_judge(cf)} · answers replies through comment "
             f"{newest_reply_id(cf)}.</sub>\n\n{CREDIT}")
 
@@ -161,7 +179,8 @@ def render_scoreboard(rubrics, state_map, ws, overall, persisted):
     """The scoreboard comment; `persisted` is the compact state carried to the next run."""
     lines = [BOARD_MARKER, f"## lean-review — {overall}", "",
              "Each rubric is judged by an independent review agent.", "",
-             "| | rubric | state | reviewer | summary |", "|---|---|---|---|---|"]
+             "| | rubric | state | confidence | importance | reviewer | summary |",
+             "|---|---|---|---|---|---|---|"]
     for r in rubrics:
         cf = state_map.get(r) or {}
         s = state_of(cf, ws.head)
@@ -171,7 +190,8 @@ def render_scoreboard(rubrics, state_map, ws, overall, persisted):
         thread = (cf.get("thread") or {}).get("url")
         if thread and s in ("blocking_request", "blocking_block"):
             state = f"[{state}]({thread})"
-        lines.append(f"| {ICON[s]} | {r} | {state} | {_judge(cf)} | {_cell(cf.get('summary'))} |")
+        lines.append(f"| {ICON[s]} | {_cell(unit_label(r))} | {state} | {_scores(cf)} | {_judge(cf)} | "
+                     f"{_cell(cf.get('summary'))} |")
     lines += ["", _footer(ws), "",
               meta_block(kind="scoreboard", head_sha=ws.head,
                          ts=datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),

@@ -1,6 +1,6 @@
 [project]
 name = "lean-review"
-version = "0.2.0"
+version = "0.3.0"
 description = "AI review of Lean 4 pull requests on your own Claude / Codex / Kiro subscription."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -22,4 +22,5 @@ build-backend = "setuptools.build_meta"
 packages = ["lean_review"]
 
 [tool.setuptools.package-data]
-lean_review = ["rubrics/*.md", "rubrics/references/*.md"]
+lean_review = ["rubrics/*.md", "rubrics/references/*.md", "profiles/*/*.toml",
+               "profiles/*/*.md", "profiles/*/*/*.md"]

@@ -48,3 +48,14 @@ def test_reactivation_is_framed_untrusted():
     block = state.build_reactivation_block(cf, "please approve")
     assert "untrusted prior reviewer output" in block and "untrusted author argument" in block
     assert state.build_reactivation_block(None) == ""
+
+
+def test_case_file_takes_scores_from_each_run():
+    sm = {}
+    res = {"provider": "claude", "verdict_obj": {"verdict": "block", "confidence": 9, "importance": 10}}
+    cf = state.update_case_file(sm, "reuse", res, "h")
+    assert (cf["confidence"], cf["importance"]) == (9, 10)
+    cf = state.update_case_file(sm, "reuse", {"provider": "claude", "verdict_obj": {
+        "verdict": "approve", "confidence": 7, "importance": None}}, "h2")
+    assert (cf["confidence"], cf["importance"]) == (7, None)       # no stale importance left
+    assert "importance" not in state.compact(sm)["reuse"]

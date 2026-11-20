@@ -44,10 +44,27 @@ user's GitHub account.
 | "post it **if** it finds problems", "only post if it isn't clean" | `--post-unless-approved` (core mode): one run that posts only when some rubric did not approve |
 | "keep a running scoreboard", "update the review after my fixes" | `--mode scoreboard` |
 | "use Claude only" / "use Codex" | `--reviewer claude` / `--reviewer codex` |
+| a formal-conjectures PR (google-deepmind/formal-conjectures or a fork) | nothing extra: the profile is picked automatically (see below). `--profile formal-conjectures` forces it |
+| "just check the statements", "is it misformalized?" (formal-conjectures) | `--rubrics faithfulness,variant-faithfulness` |
+| "quick" or "cheap" on formal-conjectures | additionally `--full-checks 0`, which gives every statement the 2-session variant review instead of 3 sessions each |
 
 Rubric names: `correctness`, `reuse`, `attribution`, `api-design`, `generality`, `placement`,
 `naming`, `documentation`, `proof-quality`. A project may add its own. With no `--rubrics`, all
 the project's rubrics run in that order.
+
+**The formal-conjectures profile.**
+- **Rubric set:** `faithfulness`, `variant-faithfulness`, `reuse`, `definitions`,
+  `completeness`, `metadata`, `documentation`, `proof-quality`.
+- **When it applies:**
+  - Automatically, when the PR's base commit has `FormalConjecturesUtil/`.
+  - Otherwise with `--profile formal-conjectures`, or a config's `profile`.
+  - `--profile default` turns it off.
+- **Per-statement rubrics:** `faithfulness` and `variant-faithfulness` run once per changed
+  statement, or per batch of up to 6 statements, not once per PR.
+- **Quota:**
+  - `faithfulness` uses 3 sessions per main statement (up to `--full-checks`, default 6), and
+    `variant-faithfulness` 2 per batch.
+  - So a PR with many statements costs more than nine sessions.
 
 ## Step 2: preflight
 
@@ -113,7 +130,7 @@ uvx --from git+https://github.com/felixpernegger/lean-review lean-review N --rep
 
 | status | meaning | what to do |
 |---|---|---|
-| 0 | The review completed. | Read `review.md`. A `blocked` or `changes requested` headline is a *successful* run that found problems. |
+| 0 | The review completed. | Read `review.md`. A `blocked` or `changes requested` headline is a *successful* run that found problems. If `review.md` is empty, progress.log says `no selected rubric applies to this PR`: for example, only per-statement rubrics were asked for and the PR changes no statement. |
 | 1 | A setup error or posting failure. | Read the `lean-review: …` line in `progress.log` and fix it (see the table below). |
 | 3 | No rubric produced a verdict. Nothing was posted. | Read the `no verdict:` lines in `progress.log`. |
 
@@ -126,6 +143,15 @@ uvx --from git+https://github.com/felixpernegger/lean-review lean-review N --rep
   the base `lake-manifest.json` pins no Mathlib (which prints a `note:` line instead). **No
   `fetching Mathlib` line means Mathlib was not used**, so `reuse` and `naming` could not grep it.
   Mention this when those rubrics ran.
+- with the formal-conjectures profile:
+  - `note: formal-conjectures layout detected; …` when it was picked automatically;
+  - `[faithfulness] no changed main statement; skipped` when a per-statement rubric has nothing to
+    review;
+  - a `note: … beyond full_checks=…` line when there are too many main statements;
+  - a per-statement rubric's lines name its statement or batch, e.g. `[faithfulness:erdos_406]`
+    or `[variant-faithfulness:2]`. Before its verdict come `… stage literal-reading with <cli> →
+    done (<s>)` and `… stage independent-formalization …` lines. `no output` there is not an
+    error: the rubric then does that analysis itself.
 - per rubric, `[rubric] reviewing with <cli>…`, then `[rubric] <cli>/<model> → <verdict> (<s>)`.
   `<verdict>` is `approve`, `request_changes`, `block`, or `error`, where `error` means that
   attempt produced no verdict.
@@ -151,7 +177,11 @@ uvx --from git+https://github.com/felixpernegger/lean-review lean-review N --rep
   requested`, `blocked`, `pending` (some rubric has not run yet), `re-review pending`
   (scoreboard mode: approvals from an earlier commit still need re-checking) or `partial`. If a block stopped the run early, it says so: `(halted
   at a block; X and later not run)`.
-- A table with one row per rubric: icon, rubric, verdict, reviewer, one-paragraph summary.
+- A table with one row per rubric: icon, rubric, verdict, confidence, importance, reviewer,
+  one-paragraph summary. `confidence` (how sure the reviewer is of its verdict) and `importance`
+  (how much the fix matters before merging; only with an adverse verdict) are `n/10`, or `—` when
+  absent. A per-statement rubric has one row per statement or batch, e.g.
+  `faithfulness · erdos_406`.
 - Optionally `### Findings outside the diff`, one bullet per finding.
 - One `--- inline path:line` block per finding that will be attached to a changed line.
 - A `<sub>Reviewed head … · diff · lean-review <version></sub>` footer and a `Make AI reviews
@@ -177,7 +207,8 @@ the run automatically. Their rubric goes to another installed reviewer.
 
 ## Step 5: report, then post only on request
 
-1. Give the user the headline, each rubric's verdict, and the findings, including file and line.
+1. Give the user the headline, each rubric's verdict with its confidence and importance, and the
+   findings, including file and line.
    If a rubric approved with no findings, say so. If progress.log shows a reviewer was dropped,
    say which one and why, because the verdicts then come from the remaining reviewer only. Don't
    paste the hidden meta line.
@@ -232,13 +263,15 @@ repo's default branch to take effect. For one run you can test it locally with
 | `lean_review/config.py` | `.lean-review.toml` and overlays, read from the base commit; `{{placeholder}}` and `<!-- if key -->` templating |
 | `lean_review/workspace.py` | PR metadata, the checkout at head (no `.git`, escaping symlinks removed), Mathlib at the base-pinned rev, the shared prompt context |
 | `lean_review/pr_diff.py` | three-dot diff via a bounded, credential-free bare git fetch |
-| `lean_review/reviewers.py` | claude/codex/kiro runners, clean-room HOME, prompt assembly, error classification |
-| `lean_review/engine.py` | the rubric loop: retry, reviewer fallback, halt on block |
+| `lean_review/reviewers.py` | claude/codex/kiro runners, clean-room HOME, prompt assembly (rubrics and blind stages), error classification |
+| `lean_review/engine.py` | the rubric loop: retry, reviewer fallback, halt on block, blind stages before a per-statement unit |
+| `lean_review/statements.py` | changed declarations from the diff, per-statement units (`rubric:target`), junk-value hints |
 | `lean_review/verdict.py` | marker-gated verdict parsing, state rules |
 | `lean_review/state.py` | scoreboard case files, patch digest, carry-forward, thread replies |
 | `lean_review/render.py` | all posted Markdown, sanitising, hidden meta |
 | `lean_review/post.py` | `gh api` publishing |
 | `lean_review/rubrics/` | the shipped prompts: `_common.md` plus one file per rubric |
+| `lean_review/profiles/<name>/` | built-in profiles: `profile.toml`, notes (`common.md`), rubrics, blind-stage prompts, references |
 | `tests/` | pytest, with no network and no reviewer CLIs needed |
 
 ## Commands
@@ -274,7 +307,13 @@ Tests cover most of these. Keep them that way.
   of a run. Anything rubric-specific (the reactivation block) goes in `rubric_context`, after the
   rubric text. `tests/test_prompt.py` checks this.
 - **Rubric prompts stay project-agnostic.** No project names or roadmap references; use
-  placeholders. `tests/test_prompt.py` checks this.
+  placeholders. `tests/test_prompt.py` checks this. Prompts under `profiles/` are for one kind of
+  project and may name its layout and conventions.
+- **Blind stages stay blind.** A stage prompt carries neither the shared protocol nor the PR block.
+  The literal reading sees the statement with comments stripped. The independent formalization
+  sees only the docstring. Each runs in its own blind copy of the checkout
+  (`workspace.build_blind`), which is hard-linked, and every file rewritten in it is unlinked
+  first. `tests/test_prompt.py` and `tests/test_workspace.py` check this.
 
 ## Style
 

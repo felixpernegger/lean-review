@@ -6,7 +6,7 @@
 
 import argparse, pathlib, shutil, subprocess, sys, tempfile
 
-from . import config, engine, post, render, reviewers, state, workspace
+from . import config, engine, post, render, reviewers, state, statements, workspace
 from .verdict import has_new_contest, newest_reply_id, overall_label, posts_review_thread, state_of
 
 PROVIDERS_DOWN_EXIT = 3
@@ -25,7 +25,13 @@ def parse_args(argv):
                                      "PR's base branch")
     ap.add_argument("--mode", choices=config.MODES, help="core (one PR review; default) or "
                                                           "scoreboard (stateful board + threads)")
+    ap.add_argument("--profile", choices=config.PROFILES,
+                    help="built-in profile: formal-conjectures (statements of open conjectures; "
+                         "auto-selected when the base has FormalConjecturesUtil/) or default")
     ap.add_argument("--rubrics", help="comma-separated rubrics to run (default: the config's)")
+    ap.add_argument("--full-checks", type=int, metavar="N",
+                    help="most main statements given the full per-statement review (default: "
+                         "the profile's; the rest get the cheaper variant review)")
     ap.add_argument("--reviewer", help="comma-separated subset of claude,codex,kiro "
                                        "(default: every installed one of claude,codex)")
     ap.add_argument("--claude-model", default=reviewers.DEFAULT_MODELS["claude"])
@@ -67,7 +73,16 @@ def pick_providers(arg):
 
 def load_config(a, repo, base):
     try:
-        cfg = config.load_local(a.config) if a.config else config.load_remote(repo, base)
+        if a.config:
+            cfg = config.load_local(a.config, a.profile,
+                                    detect=lambda: config.detect_profile(repo, base))
+        else:
+            cfg = config.load_remote(repo, base, a.profile, detect=True)
+        if cfg.profile_source == "detected":
+            print(f"note: {cfg.profile} layout detected; using --profile {cfg.profile} (pass "
+                  "--profile default to opt out)", file=sys.stderr)
+        if a.full_checks is not None:
+            cfg.full_checks = a.full_checks
         if a.mode:
             cfg.mode = a.mode
         if a.rubrics:
@@ -91,12 +106,12 @@ def should_halt(a, cfg):
     return cfg.mode == "scoreboard"
 
 
-def select_scoreboard_queue(cfg, state_map, head, rerun_all):
+def select_scoreboard_queue(units, state_map, head, rerun_all):
     """Rubrics to run this invocation: everything not green at `head`, except an adverse verdict
     already judged at this exact head with no new author reply (re-running it would only
     reproduce it), plus every rubric with a new contest."""
     queue = []
-    for r in cfg.rubrics:
+    for r in units:
         cf = state_map.get(r)
         s = state_of(cf, head)
         if rerun_all or has_new_contest(cf):
@@ -110,7 +125,7 @@ def select_scoreboard_queue(cfg, state_map, head, rerun_all):
     return queue
 
 
-def publish_scoreboard(cfg, ws, state_map, ran, contested, overall, board_id):
+def publish_scoreboard(units, ws, state_map, ran, contested, overall, board_id):
     me = post.current_login()
     if not me:
         die("could not determine your GitHub login (`gh auth status`)")
@@ -118,7 +133,7 @@ def publish_scoreboard(cfg, ws, state_map, ran, contested, overall, board_id):
     roots = [c for c in (post.gh_paginate(f"/repos/{ws.repo}/pulls/{ws.pr}/comments?per_page=100")
                          or []) if c.get("in_reply_to_id") is None]
     fallback = ws.changed[0] if ws.changed else ""
-    for r in cfg.rubrics:
+    for r in units:
         cf = state_map.get(r)
         if not cf:
             continue
@@ -135,7 +150,7 @@ def publish_scoreboard(cfg, ws, state_map, ran, contested, overall, board_id):
             root = max(cf["author_replies"], key=lambda x: x["id"])["root_id"]
             post.reply_in_thread(ws.repo, ws.pr, root, render.render_contest_reply(cf, ws.head),
                                  failures)
-    body = render.render_scoreboard(cfg.rubrics, state_map, ws, overall, state.compact(state_map))
+    body = render.render_scoreboard(units, state_map, ws, overall, state.compact(state_map))
     board_id = post.upsert_scoreboard(ws.repo, ws.pr, body, board_id, me, failures)
     if not board_id:
         failures.append("scoreboard")
@@ -204,12 +219,22 @@ def main(argv=None):
         if not cfg.source_root:
             name = repo.split("/")[1]
             cfg.source_root = name if (ws.root / name).is_dir() else "."
+        log = lambda msg: print(msg, file=sys.stderr)
+        if cfg.expand:
+            ws.changed_decls = statements.changed_declarations(ws.root, ws.diff_text, ws.changed)
+        units, targets = statements.expand_units(cfg, ws.changed_decls, log)
+        if not units:
+            print("lean-review: no selected rubric applies to this PR; nothing to review",
+                  file=sys.stderr)
+            return 0
+        if targets:
+            workspace.build_blind(ws, ws.changed_decls)
         context = workspace.base_context(ws, cfg.source_root)
         version = state.rubrics_version(cfg)
         digest = state.patch_digest(ws.diff_text)
 
         board_id, state_map, replies, contested = None, {}, {}, set()
-        queue = list(cfg.rubrics)
+        queue = list(units)
         if cfg.mode == "scoreboard":
             me = post.current_login()
             comments = post.gh_paginate(f"/repos/{repo}/issues/{a.pr}/comments?per_page=100") or []
@@ -219,18 +244,18 @@ def main(argv=None):
             for r, reps in thread_replies.items():
                 if r in state_map:
                     state_map[r]["author_replies"] = reps
-            contested = {r for r in cfg.rubrics if has_new_contest(state_map.get(r))}
+            contested = {r for r in units if has_new_contest(state_map.get(r))}
             replies = {r: max(state_map[r]["author_replies"], key=lambda x: x["id"])["body"]
                        for r in contested}
             carried = state.carry_forward(state_map, ws.head, digest, version)
             if carried:
                 print(f"carried approvals (patch unchanged): {', '.join(carried)}", file=sys.stderr)
-            queue = select_scoreboard_queue(cfg, state_map, ws.head, a.rerun_all)
+            queue = select_scoreboard_queue(units, state_map, ws.head, a.rerun_all)
 
         try:
             ran, halted = engine.run_queue(cfg, ws, queue, providers, models, state_map, context,
                                            digest=digest, version=version, replies=replies,
-                                           halt=should_halt(a, cfg))
+                                           halt=should_halt(a, cfg), targets=targets)
         except engine.ProvidersDown as e:
             print(f"lean-review: {e}; nothing posted", file=sys.stderr)
             return PROVIDERS_DOWN_EXIT
@@ -240,22 +265,22 @@ def main(argv=None):
         for r in contested & set(ran):
             state_map[r]["last_reply_seen"] = newest_reply_id(state_map[r])
 
-        overall = overall_label([state_of(state_map.get(r), ws.head) for r in cfg.rubrics], halted)
+        overall = overall_label([state_of(state_map.get(r), ws.head) for r in units], halted)
         if cfg.mode == "core":
-            body, comments = render.render_core_review(cfg.rubrics, state_map, ws, overall)
+            body, comments = render.render_core_review(units, state_map, ws, overall)
             print(body)
             for c in comments:
                 print(f"\n--- inline {c['path']}:{c['line']}\n{c['body']}")
             posted = publish_core(a, repo, ws, body, comments, overall)
         else:
-            print(render.render_scoreboard(cfg.rubrics, state_map, ws, overall, {}))
-            for r in cfg.rubrics:
+            print(render.render_scoreboard(units, state_map, ws, overall, {}))
+            for r in units:
                 cf = state_map.get(r)
                 if cf and posts_review_thread(state_of(cf, ws.head)):
                     print("\n---\n" + render.render_thread(cf, ws))
             posted = a.post
             if a.post:
-                failures, board_id = publish_scoreboard(cfg, ws, state_map, ran, contested,
+                failures, board_id = publish_scoreboard(units, ws, state_map, ran, contested,
                                                         overall, board_id)
                 if failures:
                     die("publication incomplete: " + ", ".join(failures))
