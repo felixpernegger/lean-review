@@ -206,7 +206,7 @@ rubric.
 | `not_authenticated` | the CLI is logged out | Ask the user to log in (`claude`, then `/login`; or `codex login`). |
 | `model_unavailable` | the plan cannot use the default model (claude: `claude-opus-5-5`; codex: `gpt-6.1-sol`; kiro: `gpt-5.6-sol`) | lean-review can't list a plan's models. If another reviewer covered the rubric, nothing is needed. Otherwise use `--reviewer` to pick one that works, or ask the user which model their plan offers and pass `--claude-model …` / `--codex-model …`. |
 | `quota_exhausted`, `rate_limited` | the subscription limit was hit | Wait, or use `--reviewer` to switch to another installed CLI. |
-| `no_verdict`, `unknown_error` | the reviewer answered without the required verdict | Retry that rubric once with `--rubrics <name>`. |
+| `no_verdict`, `unknown_error`, `cli_error`, `unparseable_output`, `max_turns`, `execution_error` | the reviewer finished without the required verdict: it answered without one, the CLI failed without naming why, its output did not parse, or it stopped on its turn limit or an internal error | Retry that rubric once with `--rubrics <name>`. |
 
 Outdated, logged-out, quota-exhausted and model-unavailable reviewers are dropped for the rest of
 the run automatically. Their rubric goes to another installed reviewer.

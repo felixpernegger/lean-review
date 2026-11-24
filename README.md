@@ -38,7 +38,8 @@ At least one reviewer CLI is required:
 lean-review runs the first `claude` / `codex` / `kiro-cli` on your PATH, so check `which claude`
 when several are installed. Each CLI must be logged in once, interactively. lean-review never
 asks for keys or tokens. Reviews run in a clean HOME holding only the login, so your own
-`CLAUDE.md`, settings, skills and MCP servers are not used. `gh`
+`CLAUDE.md`, settings, skills and MCP servers are not used. The login is read from where the CLI
+keeps it: `$CLAUDE_CONFIG_DIR` or `$CODEX_HOME` when set, else `~/.claude` or `~/.codex`. `gh`
 reads the PR and, with `--post`, publishes as you. Private repositories work if your login can
 read them.
 
@@ -178,6 +179,7 @@ stderr names the cause after `no verdict:`.
 | `not_authenticated` | Log that CLI in again interactively (run `claude`, then `/login`; or `codex login`). |
 | `model_unavailable` | Your plan cannot use the default model. Pass one it can use: `--claude-model …` or `--codex-model …`. |
 | `quota_exhausted` / `rate_limited` | The subscription window is used up. Wait, or use `--reviewer` to switch to another CLI. |
+| `no_verdict`, `unknown_error`, `cli_error`, `unparseable_output`, `max_turns`, `execution_error` | The reviewer finished without a usable verdict. Retry that rubric once with `--rubrics <name>`. |
 | `no reviewer CLI found on PATH` | Install and log into `claude` or `codex` (step 1). |
 | `not inside a GitHub repository` | Pass `--repo owner/name`. |
 | `could not read PR` | Check the number, and that `gh auth status` shows an account that can see the repository. |

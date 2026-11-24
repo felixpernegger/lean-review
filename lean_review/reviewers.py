@@ -130,12 +130,19 @@ def _stable_claude_home():
     return home
 
 
+def _configured_dir(var):
+    """The directory a CLI's own environment variable names, or None when unset or blank."""
+    value = os.environ.get(var, "").strip()
+    return os.path.expanduser(value) if value else None
+
+
 def reviewer_env(provider):
     """A minimal environment for one reviewer subprocess: a fresh HOME holding only this
     provider's subscription credential, no API keys, no GitHub token. Returns `(env, home)`; the
-    caller must `cleanup_rev_home(home)` once the reviewer returns. If the credential is not where
-    we expect (e.g. a macOS keychain login), fall back to the real HOME so auth still works,
-    trading reproducibility for a working review."""
+    caller must `cleanup_rev_home(home)` once the reviewer returns. The credential is read from
+    where the CLI itself reads it: `CLAUDE_CONFIG_DIR` or `CODEX_HOME` when set, else the default
+    directory under HOME. If it is not there (e.g. a macOS keychain login), fall back to the real
+    login, trading reproducibility for a working review."""
     os.makedirs(REV_HOME_BASE, exist_ok=True)
     if provider == "claude":
         home = _stable_claude_home()
@@ -148,14 +155,20 @@ def reviewer_env(provider):
     if user:
         env.update(USER=user, LOGNAME=os.environ.get("LOGNAME") or user)
     if provider == "claude":
-        src = os.path.expanduser("~/.claude/.credentials.json")
+        configured = _configured_dir("CLAUDE_CONFIG_DIR")
+        src = os.path.join(configured or os.path.expanduser("~/.claude"), ".credentials.json")
         if os.path.exists(src):
-            os.makedirs(os.path.join(home, ".claude"), exist_ok=True)
-            shutil.copyfile(src, os.path.join(home, ".claude", ".credentials.json"))
+            cdir = os.path.join(home, ".claude")
+            os.makedirs(cdir, exist_ok=True)
+            shutil.copyfile(src, os.path.join(cdir, ".credentials.json"))
+            # Pin the clean copy, so a CLAUDE_CONFIG_DIR the CLI might otherwise pick up never wins.
+            env["CLAUDE_CONFIG_DIR"] = cdir
         else:
             env["HOME"] = os.path.expanduser("~")
-            print("note: no ~/.claude/.credentials.json (keychain login?); claude runs with your "
-                  "real HOME, so personal settings may influence the review", file=sys.stderr)
+            if configured:
+                env["CLAUDE_CONFIG_DIR"] = configured
+            print(f"note: no {src} (keychain login?); claude runs with your real login, so "
+                  "personal settings may influence the review", file=sys.stderr)
     elif provider == "kiro":
         env["KIRO_HOME"] = os.path.join(home, ".kiro")
         if sys.platform != "darwin":
@@ -171,11 +184,12 @@ def reviewer_env(provider):
         # policy; a host /tmp that is itself read-only (a container, another sandbox) stops it.
         env["TMPDIR"] = os.path.join(home, "tmp")
         os.mkdir(env["TMPDIR"], mode=0o700)
-        src = os.path.expanduser("~/.codex/auth.json")
+        source_dir = _configured_dir("CODEX_HOME") or os.path.expanduser("~/.codex")
+        src = os.path.join(source_dir, "auth.json")
         if os.path.exists(src):
             shutil.copyfile(src, os.path.join(codex_home, "auth.json"))
         else:
-            env["CODEX_HOME"] = os.path.expanduser("~/.codex")
+            env["CODEX_HOME"] = source_dir
     else:
         raise ValueError(f"unknown provider {provider!r}")
     return env, home
@@ -352,7 +366,8 @@ def run_claude(prompt, cwd, model, env):
         return out
     # On a failed run `result` is Claude Code's own error, not a review: keep it out of `text`.
     out.update(text="" if d.get("is_error") else d.get("result", "") or "",
-               is_error=d.get("is_error"), error_status=d.get("api_error_status"))
+               is_error=d.get("is_error"), error_status=d.get("api_error_status"),
+               error_subtype=d.get("subtype"))
     if d.get("is_error"):
         out["error_message"] = d.get("result") or ""
     return out
@@ -453,7 +468,19 @@ def error_kind(res):
             return kind
     if res.get("error_status") == 429:
         return "rate_limited"
-    return "unknown_error" if res.get("returncode") else "no_verdict"
+    # Structured facts the CLI reported about its own run, for failures no message names.
+    subtype = res.get("error_subtype")
+    if subtype == "error_max_turns":
+        return "max_turns"
+    if subtype == "error_during_execution":
+        return "execution_error"
+    if res.get("returncode"):
+        return "unknown_error"
+    if res.get("parse_error"):
+        return "unparseable_output"  # the CLI exited cleanly but its own output did not parse
+    if cli_reports_failure(res):
+        return "cli_error"  # the CLI flagged its run as failed without saying why
+    return "no_verdict"  # the CLI exited cleanly, but its answer carried no parseable verdict
 
 
 def failure_summary(res, limit=300):

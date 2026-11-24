@@ -22,8 +22,10 @@ stealing and no way to publish or approve on its own authority.
     attempt, because Claude Code writes the HOME path into its system prompt and a changing one
     would defeat the prompt cache. It never receives the other providers' credentials, a GitHub token, or an API key from the
     operator's environment.
+  - The credential is read from where the CLI reads it (`CLAUDE_CONFIG_DIR` or `CODEX_HOME` when
+    set, else under HOME), and the clean copy is pinned in the reviewer's environment.
   - If a credential cannot be found (for example a macOS keychain login), the run falls back to
-    the real HOME and says so.
+    the real login and says so.
 - **Read-only tools.**
   - claude: `--tools Read Grep Glob`. Without `--tools` the shell would stay available.
   - codex: a `read-only` sandbox with `shell_environment_policy.inherit=none`. Only `PATH` (so

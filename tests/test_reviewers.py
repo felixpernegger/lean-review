@@ -28,6 +28,8 @@ def fake_home(tmp_path, monkeypatch):
     monkeypatch.setattr(reviewers, "REV_HOME_BASE", str(tmp_path / "rev"))
     for k in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GH_TOKEN", "GITHUB_TOKEN"):
         monkeypatch.setenv(k, "secret")
+    for k in ("CLAUDE_CONFIG_DIR", "CODEX_HOME"):
+        monkeypatch.delenv(k, raising=False)
     return home
 
 
@@ -214,5 +216,52 @@ def test_codex_sandbox_keeps_path_and_private_tmpdir(fake_home):
         assert f"shell_environment_policy.set.PATH={json.dumps(env['PATH'])}" in args
         assert f"shell_environment_policy.set.TMPDIR={json.dumps(tmp)}" in args
         assert {a.split("=", 1)[0].rsplit(".", 1)[1] for a in args if ".set." in a} == {"PATH", "TMPDIR"}
+    finally:
+        reviewers.cleanup_rev_home(home)
+
+
+def test_error_kind_reads_structured_cli_facts():
+    assert reviewers.error_kind({"error_subtype": "error_max_turns"}) == "max_turns"
+    assert reviewers.error_kind({"is_error": True, "error_subtype": "error_during_execution"}) \
+        == "execution_error"
+    assert reviewers.error_kind({"returncode": 0, "parse_error": "no result event"}) \
+        == "unparseable_output"
+    assert reviewers.error_kind({"returncode": 0, "is_error": True}) == "cli_error"
+    assert reviewers.error_kind({"returncode": 0, "error_subtype": "success"}) == "no_verdict"
+
+
+def test_claude_result_keeps_its_subtype(monkeypatch):
+    monkeypatch.setattr(reviewers, "sh", lambda cmd, **kw: type("R", (), {
+        "returncode": 0, "stderr": "",
+        "stdout": claude_stream({"subtype": "error_max_turns", "is_error": True, "result": ""})})())
+    res = reviewers.run_claude("p", ".", "m", {})
+    assert res["text"] == "" and reviewers.error_kind(res) == "max_turns"
+
+
+@pytest.mark.parametrize("provider,var,cred", [
+    ("claude", "CLAUDE_CONFIG_DIR", ".credentials.json"),
+    ("codex", "CODEX_HOME", "auth.json"),
+])
+def test_credential_follows_the_configured_dir(fake_home, tmp_path, monkeypatch, provider, var, cred):
+    configured = tmp_path / "elsewhere"
+    configured.mkdir()
+    (configured / cred).write_text('{"configured": true}')
+    monkeypatch.setenv(var, str(configured))
+    env, home = reviewers.reviewer_env(provider)
+    try:
+        clean = pathlib.Path(env[var])
+        assert env["HOME"] == home and str(clean).startswith(home + os.sep)
+        assert (clean / cred).read_text() == '{"configured": true}'
+    finally:
+        reviewers.cleanup_rev_home(home)
+
+
+def test_missing_configured_credential_falls_back_to_the_real_login(fake_home, tmp_path, monkeypatch):
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(empty))
+    env, home = reviewers.reviewer_env("claude")
+    try:
+        assert env["HOME"] == str(fake_home) and env["CLAUDE_CONFIG_DIR"] == str(empty)
     finally:
         reviewers.cleanup_rev_home(home)
