@@ -1,173 +1,113 @@
 # lean-review
 
-AI review of Lean 4 pull requests, run from your own machine on the **Claude / Codex / Kiro
-subscription you are already logged into**. You need no API keys, no GitHub App and no server.
+AI review of Lean 4 pull requests, run from your own machine on the Claude, Codex or Kiro
+subscription you are already logged into. It needs no API keys, GitHub App or server.
 
-Each PR is judged by independent agents, one per *rubric* (correctness, reuse, attribution, API
-design, generality, placement, naming, documentation, proof quality). Each agent works in a
-read-only checkout of the PR head, alongside the Mathlib source the project pins, and is told to
-grep before claiming that something exists or is missing. It returns `approve`, `request_changes` or `block` with
-findings. The approach follows [botbaki](https://github.com/kim-em/botbaki), with three
-differences: it uses an agentic read-only review over a checkout instead of a single API call, it
-authenticates through subscription CLIs instead of an API key, and it runs as a CLI with no
-daemon.
+A PR is reviewed once per *rubric*: correctness, reuse, attribution, API design, generality,
+placement, naming, documentation and proof quality. Each rubric is a separate agent session with
+read-only access to a checkout of the PR head and to the Mathlib source the project pins. It
+returns `approve`, `request_changes` or `block`, with findings. The review is printed, and posted
+to the PR only if you pass `--post`.
 
-> **AI agents:** read [AGENTS.md](AGENTS.md) for step-by-step instructions.
+AI agents: see [AGENTS.md](AGENTS.md).
 
-## Quick start
+## Install
 
-These steps are written so that a person or an AI agent can follow them literally.
+You need:
 
-**1. Check the prerequisites.** The required ones are Python, git, `gh`, at least one reviewer
-CLI, and either uv or pipx to install with:
-
-```bash
-python3 --version     # 3.11 or newer
-git --version
-gh auth status        # GitHub CLI, logged in (`gh auth login` if not)
-claude --version      # Claude Code 2.1.280 or newer, logged in to a Claude subscription
-codex --version       # optional second reviewer: OpenAI Codex CLI (a current release), logged in to ChatGPT
-uv --version          # uv, or else pipx (`pipx --version`), to install the tool
-```
-
-At least one reviewer CLI is required:
-- [`claude`](https://docs.anthropic.com/en/docs/claude-code) (update with `claude update`)
-- [`codex`](https://www.npmjs.com/package/@openai/codex)
-- `kiro-cli`, after `kiro-cli login`. Kiro is only used when you pass `--reviewer kiro`.
-
-lean-review runs the first `claude` / `codex` / `kiro-cli` on your PATH, so check `which claude`
-when several are installed. Each CLI must be logged in once, interactively. lean-review never
-asks for keys or tokens. Reviews run in a clean HOME holding only the login, so your own
-`CLAUDE.md`, settings, skills and MCP servers are not used. The login is read from where the CLI
-keeps it: `$CLAUDE_CONFIG_DIR` or `$CODEX_HOME` when set, else `~/.claude` or `~/.codex`. `gh`
-reads the PR and, with `--post`, publishes as you. Private repositories work if your login can
-read them.
-
-**2. Install.** With [uv](https://docs.astral.sh/uv/) (`curl -LsSf https://astral.sh/uv/install.sh | sh`):
+- Python 3.11 or newer, and git
+- the GitHub CLI `gh`, logged in (`gh auth login`)
+- at least one reviewer CLI, logged in to a subscription:
+  [`claude`](https://docs.anthropic.com/en/docs/claude-code) (Claude Code 2.1.280 or newer),
+  [`codex`](https://www.npmjs.com/package/@openai/codex), or `kiro-cli` (used only with
+  `--reviewer kiro`)
 
 ```bash
-uv tool install git+https://github.com/felixpernegger/lean-review   # puts `lean-review` on PATH
-# or run without installing: put `uvx --from git+https://github.com/felixpernegger/lean-review`
-# in front of any `lean-review` command below, e.g.
-uvx --from git+https://github.com/felixpernegger/lean-review lean-review 13008 --repo TauCetiProject/TauCeti --rubrics proof-quality --no-mathlib
-# or with pipx:
+uv tool install git+https://github.com/felixpernegger/lean-review
+# or
 pipx install git+https://github.com/felixpernegger/lean-review
 ```
 
-**3. Try a cheap dry run** (one rubric, no Mathlib download, about 30 seconds):
+To run it without installing, put `uvx --from git+https://github.com/felixpernegger/lean-review`
+in front of any `lean-review` command.
+
+lean-review runs the first `claude`, `codex` or `kiro-cli` on your PATH, and reads each login from
+where the CLI keeps it (`$CLAUDE_CONFIG_DIR` or `$CODEX_HOME` when set, else `~/.claude` or
+`~/.codex`). Private repositories work if your `gh` login can read them.
+
+## Usage
 
 ```bash
+# a first try: one rubric, no Mathlib download, about 30 seconds
 lean-review 13008 --repo TauCetiProject/TauCeti --rubrics proof-quality --no-mathlib
-```
 
-**4. Review a real PR.** This prints the review and posts nothing:
-
-```bash
-lean-review <PR number> --repo <owner>/<name>
-```
-
-**5. Publish it,** only once a human has read the dry-run output and agreed:
-
-```bash
-lean-review <PR number> --repo <owner>/<name> --post
-```
-
-Inside a clone of the target repository, you can omit `--repo`. Posts appear under whichever
-account `gh auth status` shows.
-
-## Use
-
-```bash
-lean-review 42 --repo owner/name                          # all rubrics, print only
+lean-review 42 --repo owner/name                           # all rubrics, print only
 lean-review 42 --repo owner/name --rubrics correctness,reuse --reviewer claude
-lean-review 42 --repo owner/name --post                   # one PR review, as your gh login
-lean-review 42 --repo owner/name --mode scoreboard --post # stateful board + threads
+lean-review 42 --repo owner/name --post                    # post one PR review as your gh login
+lean-review 42 --repo owner/name --mode scoreboard --post  # keep a scoreboard comment up to date
 ```
 
-It **defaults to a dry run**: the review is printed and nothing is posted.
+Inside a clone of the target repository you can omit `--repo`.
 
 Rubric names for `--rubrics`: `correctness`, `reuse`, `attribution`, `api-design`, `generality`,
 `placement`, `naming`, `documentation`, `proof-quality`, plus any the project adds. The
-[formal-conjectures profile](#profiles-formal-conjectures) has its own set.
+[formal-conjectures profile](#the-formal-conjectures-profile) has its own set.
 
 | flag | effect |
 |---|---|
-| `--post` | publish to the PR under your GitHub login; the URL is printed |
-| `--post-unless-approved` | core mode: publish only if some rubric did not approve (for "post it if it finds problems") |
-| `--repost` | core mode: post even though you already posted a review of this exact commit (by default a second post is skipped) |
-| `--mode core\|scoreboard` | output style (see below); default from config, else `core` |
+| `--post` | post the review to the PR under your GitHub login, and print its URL |
+| `--post-unless-approved` | core mode: post only if some rubric did not approve |
+| `--repost` | core mode: post even if you already posted a review of this exact commit (skipped by default) |
+| `--mode core\|scoreboard` | see [Modes](#modes); default from the config, else `core` |
 | `--rubrics a,b` | run only these rubrics, in this order |
-| `--profile NAME` | built-in profile: `formal-conjectures` or `default`. Default: the config's, else `formal-conjectures` when the PR's base has `FormalConjecturesUtil/`, else none |
-| `--full-checks N` | formal-conjectures: most main statements given the full per-statement review (default 6); the rest get the cheaper variant review |
-| `--reviewer claude,codex,kiro` | restrict the reviewers. By default each rubric is given to one reviewer drawn at random from the installed `claude` and `codex`; the progress line shows which. Pass e.g. `--reviewer claude` for a single one |
+| `--profile NAME` | `formal-conjectures`, or `default` for none. Default: the config's, else `formal-conjectures` when the PR's base has `FormalConjecturesUtil/` |
+| `--full-checks N` | formal-conjectures: how many main statements get the full three-session review (default 6); the rest get the cheaper variant review |
+| `--reviewer claude,codex,kiro` | restrict the reviewers. By default each rubric goes to one of the installed `claude` and `codex`, chosen at random |
 | `--claude-model` | exact Claude model id; default `claude-opus-5-5` |
 | `--codex-model` | exact Codex model id; default `gpt-6.1-sol` |
 | `--kiro-model` | exact Kiro model id; default `gpt-5.6-sol`. `auto` is refused |
-| `--repo owner/name` | the repository; defaults to the one the current directory is a clone of |
-| `--no-mathlib` | skip fetching Mathlib source (faster; weaker `reuse`/`naming`) |
-| `--no-sources` | do not fetch the sources the PR cites (on by default in the formal-conjectures profile; see [Sources](#checking-against-the-source)) |
-| `--halt` / `--no-halt` | whether a `block` stops the remaining rubrics. Default: core mode runs them all; scoreboard mode stops (a later run picks up the rest) |
-| `--rerun-all` | scoreboard mode: re-run rubrics that are already green at this head |
+| `--repo owner/name` | default: the repository the current directory is a clone of |
+| `--no-mathlib` | don't fetch the Mathlib source. Faster, but `reuse` and `naming` can't grep it |
+| `--no-sources` | don't fetch the sources the PR cites (see [Sources](#sources)) |
+| `--halt` / `--no-halt` | whether a `block` stops the remaining rubrics. Core mode runs them all by default; scoreboard mode stops, and a later run picks up the rest |
+| `--rerun-all` | scoreboard mode: re-run every rubric, including those already approved at this head |
 | `--config PATH` | use a local `.lean-review.toml` instead of the one on the PR's base branch |
 | `--keep` | keep the temporary workspace |
 
 ### Modes
 
-- **`core`** (default) posts one GitHub PR review (event `COMMENT`):
-  - The body holds a verdict table with one row per rubric (see [Scores](#scores)).
-  - Findings whose line is in the diff become inline comments.
-  - All other findings are listed in the body.
-  - Each run is independent and keeps no state.
-- **`scoreboard`** keeps one scoreboard comment per PR and edits it in place.
-  - **Per-rubric threads.** Each blocking rubric gets its own file-level review thread. The thread
-    is resolved once the rubric turns green.
-  - **What a run re-checks.** A later run re-reviews only rubrics that are not green at the current
-    head.
-  - **Carried approvals.** An approval carries over to a new head when the patch is unchanged, as
-    after a rebase or a merge from base.
-  - **Contesting.** Replying in a rubric's thread contests that finding. The next run re-reviews
-    only that rubric, with your reply in context, and answers in the thread.
-  - **Where state lives.** State is hidden JSON inside *your own* scoreboard comment. No other
-    store exists, and a board posted by anyone else is never read.
+`core` (the default) posts one PR review, with event `COMMENT`. Its body has a verdict table with
+one row per rubric. Findings on a line of the diff become inline comments, and the rest are listed
+in the body. Runs keep no state.
 
-## Output, run time and exit codes
+`scoreboard` keeps one comment per PR and edits it in place. Each rubric that does not approve
+gets its own file-level review thread, which is resolved once the rubric approves. A later run
+re-reviews only the rubrics not yet approved at the current head. An approval carries over to a
+new head when the patch is unchanged, as after a rebase or a merge from base. To contest a
+finding, reply in its thread: the next run re-reviews that rubric with your reply in context, and
+answers there. The state is hidden JSON in your own scoreboard comment. A board posted by anyone
+else is never read.
 
-### Scores
+## Output
 
-Every rubric's row also carries two 1–10 self-assessments by its reviewer. A missing or invalid
-score shows as `—`.
+stdout is the review as it would be posted (Markdown), followed in core mode by the inline
+comments. stderr is progress, one `[rubric] reviewer → verdict` line per rubric, and any errors.
 
-- **confidence**: how sure the reviewer is of its verdict. 1 means it is guessing. 5 means it thinks
-  so, but the opposite could well be true. 10 means it is extremely confident.
-- **importance**: given only with `changes requested` or `blocked`, it says how much the fix
-  matters before merging. 1 means it barely matters. 5 means it should be fixed, but merging
-  without it would make little difference. 10 means a real blocker, such as a misformalized
-  statement.
+The headline is `approved`, `changes requested` or `blocked`. Each rubric's row has its verdict
+and two scores from 1 to 10 that the reviewer gives itself: its *confidence* in the verdict, and,
+when the verdict is not an approval, the *importance* of the fix before merging (10 is a real
+blocker, such as a misformalized statement). A missing score shows as `—`.
 
+| exit status | meaning |
+|---|---|
+| 0 | The review completed. `blocked` and `changes requested` also exit 0, so read the verdict from the output. Also when no selected rubric applies to the PR (e.g. only `faithfulness`, and no statement changed): stderr says so and nothing is printed. |
+| 1 | A usage or setup error, or posting failed. stderr says which. |
+| 3 | No rubric produced a verdict, typically because every reviewer CLI is logged out, outdated or out of quota. Nothing was posted. |
 
-- **stdout** holds the review exactly as it would be posted (Markdown), followed by the inline
-  comments in core mode. **stderr** holds progress, one `[rubric] reviewer → verdict` line per
-  rubric, plus any errors.
-- **Run time.** Each rubric takes about 10–60 seconds, so all nine take a few minutes. The first
-  step also downloads the PR's code, the Mathlib source the project pins (unless you pass
-  `--no-mathlib`) and, in the formal-conjectures profile, the sources the PR cites. That is usually under a minute, but slower on a slow connection. The tool is
-  non-interactive and never prompts, so allow at least 30 minutes before treating a run as hung.
-  When run through `uvx`, uv's own build messages appear on stderr first.
-- **Disk.** Everything is downloaded into a fresh temporary directory, which is deleted when the
-  run ends (`--keep` keeps it and prints its path). Each reviewer's throwaway HOME lives under
-  `~/.lean-review-rev/` and is emptied or removed as soon as that reviewer finishes. Nothing else persists,
-  apart from uv's or pipx's own package cache.
-- **Exit status:**
-
-  | status | meaning |
-  |---|---|
-  | 0 | The review completed and was printed (and posted with `--post`). A `blocked` or `changes requested` verdict still exits 0. Read the verdict from the output. Also when no selected rubric applies to the PR (e.g. only `faithfulness`, and no statement changed): stderr says so and nothing is printed. |
-  | 1 | A usage or setup error, or posting failed. The message on stderr says which. |
-  | 3 | No rubric produced a verdict, typically because every reviewer CLI is logged out, outdated, or out of quota. Nothing was posted. |
-
-- **Verdicts.** Each rubric returns `approve`, `request_changes` or `block`. The review's headline
-  sums them up as `approved`, `changes requested` or `blocked`. A `block` halts the remaining
-  rubrics in scoreboard mode (or with `--halt`); core mode runs every rubric by default.
+A rubric takes 10–60 seconds, so a full review takes a few minutes, plus the download of the PR
+and of Mathlib. The tool never prompts for input. Downloads go into a temporary directory that is
+deleted when the run ends (`--keep` keeps it and prints its path). Each reviewer's throwaway HOME
+is under `~/.lean-review-rev/` and is removed when that reviewer finishes.
 
 ## Troubleshooting
 
@@ -175,30 +115,24 @@ stderr names the cause after `no verdict:`.
 
 | message | fix |
 |---|---|
-| `cli_outdated` (e.g. "version 2.1.280 or newer is required", "requires a newer version of Codex") | Update that CLI: `claude update`, or reinstall `codex`. Check that `which claude` points at the updated copy. |
-| `not_authenticated` | Log that CLI in again interactively (run `claude`, then `/login`; or `codex login`). |
-| `model_unavailable` | Your plan cannot use the default model. Pass one it can use: `--claude-model …` or `--codex-model …`. |
-| `quota_exhausted` / `rate_limited` | The subscription window is used up. Wait, or use `--reviewer` to switch to another CLI. |
+| `cli_outdated` | Update that CLI: `claude update`, or reinstall `codex`. Check that `which claude` points at the updated copy. |
+| `not_authenticated` | Log that CLI in again (run `claude`, then `/login`; or `codex login`). |
+| `model_unavailable` | Your plan cannot use the default model. Pass one it can: `--claude-model …` or `--codex-model …`. |
+| `quota_exhausted`, `rate_limited` | The subscription limit was hit. Wait, or switch CLI with `--reviewer`. |
 | `no_verdict`, `unknown_error`, `cli_error`, `unparseable_output`, `max_turns`, `execution_error` | The reviewer finished without a usable verdict. Retry that rubric once with `--rubrics <name>`. |
-| `no reviewer CLI found on PATH` | Install and log into `claude` or `codex` (step 1). |
+| `no reviewer CLI found on PATH` | Install and log into `claude` or `codex`. |
 | `not inside a GitHub repository` | Pass `--repo owner/name`. |
 | `could not read PR` | Check the number, and that `gh auth status` shows an account that can see the repository. |
 
-A reviewer that is outdated, logged out, out of quota, or without access to its model is dropped
+A reviewer that is outdated, logged out, out of quota or without access to its model is dropped
 for the rest of the run, and its rubric goes to another installed reviewer if there is one.
-
-## Notes for AI agents
-
-If you are an AI agent asked to run lean-review, or to change this repository, follow
-[AGENTS.md](AGENTS.md). It covers the step-by-step procedure, how to read the output, what to do
-on each error, and the rules, such as never posting without the user's explicit consent.
 
 ## Configuring a project
 
-Everything is optional. With no configuration, a project gets the built-in rubrics, its repo name
-as the project name, and the Mathlib rev pinned in `lake-manifest.json`. To customise, commit
-these to the target repository's **default branch**. They are always read from the PR's base
-commit, never from the PR, so an author cannot rewrite their own review.
+All of this is optional. Without it, a project gets the built-in rubrics, its repository name as
+the project name, and the Mathlib rev pinned in `lake-manifest.json`. To customise, commit the
+files below to the target repository's default branch. They are read from the PR's base commit,
+never from the PR, so an author cannot rewrite their own review.
 
 ```toml
 # .lean-review.toml
@@ -216,34 +150,43 @@ profile     = ""               # optional: a built-in profile laid beneath this 
 full_checks = 6                # profiles with per-statement rubrics: most statements reviewed in full
 ```
 
-- **`.lean-review/common.md`** is appended to the shared protocol as *project notes*. Use it for
-  house policy, such as a compatibility policy. Without one, reviewers follow Mathlib's deprecation
+- `.lean-review/common.md` is appended to the shared protocol as project notes. Use it for house
+  policy, such as a compatibility policy. Without one, reviewers follow Mathlib's deprecation
   practice.
-- **`.lean-review/rubrics/<name>.md`** adds a new rubric, or replaces the built-in rubric of that
-  name. List new rubrics in `rubrics`.
+- `.lean-review/rubrics/<name>.md` adds a rubric, or replaces the built-in one of that name. List
+  new rubrics in `rubrics`.
 
-[`examples/tauceti/`](examples/tauceti/) is a complete example: a configuration for
-[Tau Ceti](https://github.com/TauCetiProject/TauCeti), including its stricter compatibility policy and a project-specific `quality-pass` rubric that
-checks the author's report from Tau Ceti's PR template.
+[`examples/tauceti/`](examples/tauceti/) is a complete configuration for
+[Tau Ceti](https://github.com/TauCetiProject/TauCeti), with a stricter compatibility policy and a
+`quality-pass` rubric that checks the author's report from Tau Ceti's PR template.
 
-## Profiles: formal-conjectures
+The built-in rubrics are in [`lean_review/rubrics/`](lean_review/rubrics/). A reviewer's prompt is
+the shared protocol (`_common.md`), the project notes, the PR (diff, description, and whether CI
+passed), and then the rubric file, with placeholders such as `{{project}}` filled from the
+configuration. Everything before the rubric file is the same for every rubric of a run, so Claude
+reviewers after the first read it from the prompt cache. A diff or description too long for the
+prompt is cut, and the full text is put in the checkout under `.lean-review-pr/` for the reviewer
+to read.
 
-A profile is a built-in layer of configuration, notes and rubrics for a kind of project. It sits
-beneath the repository's own `.lean-review.toml`, so it also works for repositories whose default
-branch you cannot add a config to. The one profile so far is `formal-conjectures`, for
+## The formal-conjectures profile
+
+A profile is a built-in set of configuration, notes and rubrics for one kind of project. It is
+applied beneath the repository's own `.lean-review.toml`, so it works on repositories you cannot
+commit a config to. The only one so far is `formal-conjectures`, for
 [formal-conjectures](https://github.com/google-deepmind/formal-conjectures) and repositories laid
 out like it: Lean statements of open conjectures, whose proofs are `sorry` by design.
 
-It is chosen with `--profile formal-conjectures` or `profile = "formal-conjectures"`. It is also
-chosen automatically, with a `note:` line, when the PR's base commit has `FormalConjecturesUtil/`.
-Pass `--profile default` to opt out.
+It is picked automatically when the PR's base commit has `FormalConjecturesUtil/`, or with
+`--profile formal-conjectures`, or with `profile = "formal-conjectures"` in the config.
+`--profile default` turns it off.
 
-There the statement is the product, so the review concentrates on misformalization:
+In such a repository the statement is what matters, so most of the review goes into catching
+misformalizations:
 
-| rubric | runs | sessions | can block? |
+| rubric | what it checks | sessions | can block? |
 |---|---|---|---|
-| `faithfulness` | once per changed main statement (up to `--full-checks`, default 6) | 3 each | yes |
-| `variant-faithfulness` | once per batch of up to 6 variants, textbook statements and further main statements | 2 each | yes |
+| `faithfulness` | each changed main statement, up to `--full-checks` (default 6) | 3 each | yes |
+| `variant-faithfulness` | variants, textbook statements and further main statements, in batches of up to 6 | 2 per batch | yes |
 | `reuse` | duplicates in Mathlib, `FormalConjecturesForMathlib/`, or the same problem stated elsewhere in the repository | 1 | yes |
 | `definitions` | natural, general definitions, checked by test statements (first terms, with proofs where feasible) instead of API | 1 | no |
 | `completeness` | the open problem itself, every part, and the known results the sources name | 1 | no |
@@ -254,31 +197,33 @@ There the statement is the product, so the review concentrates on misformalizati
 A main statement is a changed `research open` or `research solved` theorem whose name has no
 `.variants.` segment. Each one gets three sessions:
 
-1. **Literal reading.** A session that sees the statement with every comment and docstring
-   removed writes down what it literally asserts.
-2. **Independent formalization.** A session that sees only the docstring writes its own Lean
+1. Literal reading. A session that sees the statement with every comment and docstring removed
+   writes down what it literally asserts.
+2. Independent formalization. A session that sees only the docstring writes its own Lean
    statement.
-3. **Adjudication.** A session that sees the whole PR, both outputs and a misformalization
-   checklist compares them, tries a quick proof and disproof, and blocks only with a witness.
+3. Adjudication. A session that sees the whole PR, both outputs and a misformalization checklist
+   compares them, tries a quick proof and disproof, and blocks only with a witness.
 
-Each blind step works in its own copy of the checkout: comments stripped from the changed files
-for the first, the PR's new declarations removed for the second. Neither sees the PR description
-or the diff. Variants get the reading and the adjudication only.
+The first two steps are blind: each works in its own copy of the checkout (comments stripped from
+the changed files for the first, the PR's new declarations removed for the second), and neither
+sees the PR description or the diff. Variants get steps 1 and 3 only.
 
-The design ports the strongest detectors of a study of formal-conjectures' historical
-misformalizations. Reviewers cannot run Lean, so the study's mechanical checks are reduced to
-hints, and the prove/disprove check is done by reasoning.
-[`lean_review/profiles/formal-conjectures/`](lean_review/profiles/formal-conjectures/README.md) has
+Rows of the review name their statement, e.g. `faithfulness · erdos_406`. A PR with 1 main
+statement and 3 variants costs 3 + 2 + 6 = 11 sessions. `--full-checks 0` gives every statement
+the cheaper two-session review.
+
+The pipeline follows a study of formal-conjectures' historical misformalizations. Reviewers cannot
+run Lean, so the study's mechanical checks are reduced to hints, and the prove/disprove check is
+done by reasoning. The [profile's README](lean_review/profiles/formal-conjectures/README.md) has
 the details.
 
-### Checking against the source
+### Sources
 
-Reviewers have no network, so they cannot open the sources a PR cites. The profile therefore turns
-on `sources`: before the review, the runner fetches each cited source into the checkout under
-`.lean-review-sources/`, with an `INDEX.md` listing what it fetched and what it could not. Every
-rubric is told it is there, and the faithfulness, metadata, completeness and documentation rubrics
-check the docstrings, the statement and its category against the source's own text, not the
-author's account of it.
+Reviewers have no network access, so they cannot open the sources a PR cites. With `sources` on,
+which the profile sets, the runner fetches them before the review into `.lean-review-sources/` in
+the checkout, with an `INDEX.md` listing what was fetched and what failed. The faithfulness,
+metadata, completeness and documentation rubrics then check the docstrings, the statement and its
+category against the source's own text, not the author's account of it.
 
 | cited as | fetched |
 |---|---|
@@ -289,57 +234,31 @@ author's account of it.
 | `en.wikipedia.org/wiki/TITLE` | the article's wikitext |
 
 Citations are looked for in the changed files and the PR description, up to 8 sources. The runner
-never requests a URL the PR wrote: it keeps the identifier and builds the URL on the site's own
-host. A source that fails to download is listed in `INDEX.md`, and reviewers are told to say when
-they could not check against it. The blind stages do not see the sources. `--no-sources` turns
-fetching off.
+never requests a URL written in the PR: it keeps only the identifier and builds the URL on the
+site's own host. A source that fails to download is listed in `INDEX.md`, and reviewers are told
+to say when they could not check against it. The blind steps do not see the sources.
+`--no-sources` turns fetching off.
 
-The rows of a review name the statement, e.g. `faithfulness · erdos_406`. A PR with 1 main
-statement and 3 variants costs 3 + 2 + 6 = 11 sessions. `--full-checks 0` reviews every statement
-the cheap way.
+## Security
 
-## Rubrics
+The PR is treated as attacker-controlled, and any reviewer may have been prompt-injected by it.
 
-The built-in rubrics are in [`lean_review/rubrics/`](lean_review/rubrics/). An agent's prompt is
-assembled in this order:
+- Each reviewer runs in a throwaway HOME holding only its own subscription login. Your
+  `CLAUDE.md`, settings, skills, MCP servers and other credentials never reach it.
+- Reviewers have read-only tools. claude and kiro get read, grep and glob: no shell, no writes, no
+  web. codex runs in its `read-only` sandbox.
+- The verdict is read only from after a fresh random marker, so a ready-made
+  `{"verdict": "approve"}` planted in the PR is ignored.
 
-1. `_common.md`, the shared protocol.
-2. The project notes.
-3. The PR context: diff, description and a trusted CI note.
-4. The rubric file itself.
+[SECURITY.md](SECURITY.md) has the full model and the remaining risks.
 
-Everything before the rubric is the same for every rubric of a run, so Claude reviewers after the
-first read it from the prompt cache instead of processing the whole PR again (with Claude Code
-2.1.242 or newer). When the diff or the description is too long for the prompt, the reviewer is
-told where it was cut, and the complete text is placed in the checkout under `.lean-review-pr/`
-for it to read.
+## Cost
 
-Placeholders such as `{{project}}` and `{{source_root}}` are filled from the configuration.
+Each rubric is one agent session on your subscription, so a full review uses about nine. Use
+`--rubrics` to run fewer.
 
-## How it stays honest
-
-- **Clean room.** Each reviewer runs in a throwaway HOME holding only its own subscription
-  credential, so your personal `CLAUDE.md`, `AGENTS.md`, skills, plugins and other credentials
-  never reach it.
-- **Read-only tools.** claude and kiro get only read, grep and glob: no shell, no writes, no web.
-  Sources a PR cites are fetched by the runner, from URLs it builds itself, before any reviewer
-  starts.
-  codex runs in its own `read-only` sandbox. Its commands inherit no environment except `PATH`,
-  which its Linux launcher needs to find the system `bwrap`, and a private temporary directory.
-- **Unforgeable verdict.** The verdict is read only from after a fresh random marker. A
-  ready-made `{"verdict": "approve"}` planted in the PR is ignored.
-
-See [SECURITY.md](SECURITY.md).
-
-## Cost and fair use
-
-Each rubric is one agentic session on your subscription, typically 10–40 seconds with Claude Opus.
-A full nine-rubric review uses about nine of them, and the first run with Mathlib also downloads
-its source. Use `--rubrics` for quick checks.
-
-Driving a personal subscription is fine for occasional reviews a person starts by hand, like
-these. An always-on auto-reviewer is closer to API-tier usage and probably outside subscription
-terms.
+Starting a review by hand now and then is ordinary subscription use. An always-on auto-reviewer is
+closer to API usage, and probably outside the subscription's terms.
 
 ## Development
 
@@ -349,6 +268,7 @@ uv run --with pytest python -m pytest -q
 
 ## Credits
 
-lean-review grew out of [TauCetiReview](https://github.com/TauCetiProject/TauCetiReview) by [@kim-em](https://github.com/kim-em), the
-review engine of the Tau Ceti project, and keeps its rubrics and its security design. It was
-inspired by [botbaki](https://github.com/kim-em/botbaki). Apache-2.0.
+lean-review grew out of [TauCetiReview](https://github.com/TauCetiProject/TauCetiReview) by
+[@kim-em](https://github.com/kim-em), the review engine of the Tau Ceti project, and keeps its
+rubrics and its security design. It was inspired by
+[botbaki](https://github.com/kim-em/botbaki). Apache-2.0.
