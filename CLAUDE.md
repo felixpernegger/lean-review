@@ -72,5 +72,6 @@ Tests cover most of these. Keep them that way.
 ## Style
 
 Match the surrounding code: compact modules, docstrings that explain *why*, few comments.
-Keep the README, AGENTS.md and `--help` in sync whenever flags, defaults, exit codes or output
-formats change.
+AGENTS.md is the reference: keep it and `--help` in sync whenever flags, defaults, exit codes or
+output formats change. The README is a short overview for humans. Keep its rubric tables and
+examples accurate, and put details in AGENTS.md, not there.

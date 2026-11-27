@@ -1,8 +1,10 @@
 # AGENTS.md
 
-Instructions for AI agents. Part A is for running lean-review on a user's behalf. Part B is for
-changing this repository. [README.md](https://github.com/felixpernegger/lean-review/blob/main/README.md) has the full flag table and configuration
-reference.
+Instructions for AI agents, and the full reference for lean-review. Part A is for running
+lean-review on a user's behalf, and ends with every flag and configuration key. Part B is for
+changing this repository.
+[README.md](https://github.com/felixpernegger/lean-review/blob/main/README.md) is the short
+overview for humans, with a table of what each rubric checks.
 
 ---
 
@@ -131,7 +133,7 @@ uvx --from git+https://github.com/felixpernegger/lean-review lean-review N --rep
 | status | meaning | what to do |
 |---|---|---|
 | 0 | The review completed. | Read `review.md`. A `blocked` or `changes requested` headline is a *successful* run that found problems. If `review.md` is empty, progress.log says `no selected rubric applies to this PR`: for example, only per-statement rubrics were asked for and the PR changes no statement. |
-| 1 | A setup error or posting failure. | Read the `lean-review: …` line in `progress.log` and fix it (see the table below). |
+| 1 | A setup error or posting failure. | Read the `lean-review: …` line in `progress.log` and fix it (see the setup errors below). |
 | 3 | No rubric produced a verdict. Nothing was posted. | Read the `no verdict:` lines in `progress.log`. |
 
 **progress.log (stderr)**:
@@ -211,6 +213,14 @@ rubric.
 Outdated, logged-out, quota-exhausted and model-unavailable reviewers are dropped for the rest of
 the run automatically. Their rubric goes to another installed reviewer.
 
+**Setup errors (exit status 1):**
+
+| message | fix |
+|---|---|
+| `no reviewer CLI found on PATH` | Ask the user to install and log into `claude` or `codex`. |
+| `not inside a GitHub repository` | Pass `--repo OWNER/NAME`. |
+| `could not read PR` | Check the number, and that `gh auth status` shows an account that can see the repository. |
+
 ## Step 5: report, then post only on request
 
 1. Give the user the headline, each rubric's verdict with its confidence and importance, and the
@@ -250,12 +260,68 @@ the run automatically. Their rubric goes to another installed reviewer.
 - **Contesting.** A human contests a finding by replying in that rubric's review thread. The next
   run re-reviews only that rubric and answers in the thread.
 
-## Configuring a project, if the user asks
+## Configuring a project
+
+Do this only if the user asks. All of it is optional: without a config, a project gets the
+built-in rubrics, its repository name as the project name, and the Mathlib rev pinned in
+`lake-manifest.json`.
 
 Configuration is read from the PR's **base** commit, so it must be committed to the target
 repo's default branch to take effect. For one run you can test it locally with
-`--config path/to/.lean-review.toml`. The format is in [README.md](https://github.com/felixpernegger/lean-review/blob/main/README.md#configuring-a-project).
-[`examples/tauceti/`](https://github.com/felixpernegger/lean-review/blob/main/examples/tauceti/) is a complete example.
+`--config path/to/.lean-review.toml`.
+
+```toml
+# .lean-review.toml
+project     = "MyLib"
+description = "a Lean 4 library of results on …"   # completes "review agents for MyLib, …"
+source_root = "MyLib"          # where the project's own sources live (default: the repo name, if present)
+namespace   = "MyLib"          # optional: enables the naming rubric's namespace rule
+mode        = "core"           # or "scoreboard"
+rubrics     = ["correctness", "reuse", "attribution", "api-design", "generality",
+               "placement", "naming", "documentation", "proof-quality"]
+mathlib     = true
+sources     = false            # fetch the sources the PR cites (erdosproblems.com, arXiv, OEIS, Wikipedia)
+ci_check    = "build"          # if this check passed on the head, reviewers are told the build is green
+profile     = ""               # optional: a built-in profile laid beneath this file, e.g. "formal-conjectures"
+full_checks = 6                # profiles with per-statement rubrics: most statements reviewed in full
+```
+
+- `.lean-review/common.md` is appended to the shared protocol as project notes. Use it for house
+  policy, such as a compatibility policy. Without one, reviewers follow Mathlib's deprecation
+  practice.
+- `.lean-review/rubrics/<name>.md` adds a rubric, or replaces the built-in one of that name. List
+  new rubrics in `rubrics`. Placeholders such as `{{project}}` are filled from the configuration.
+
+[`examples/tauceti/`](https://github.com/felixpernegger/lean-review/blob/main/examples/tauceti/)
+is a complete example, with a stricter compatibility policy and a `quality-pass` rubric that
+checks the author's report from Tau Ceti's PR template.
+
+## All flags
+
+| flag | effect |
+|---|---|
+| `--post` | post the review to the PR under the user's GitHub login, and print its URL |
+| `--post-unless-approved` | core mode: post only if some rubric did not approve |
+| `--repost` | core mode: post even if a review of this exact commit was already posted (skipped by default) |
+| `--mode core\|scoreboard` | default from the config, else `core`. Core posts one PR review with event `COMMENT`: a verdict table, findings on a line of the diff as inline comments, the rest in the body, and no state kept between runs. For scoreboard see above |
+| `--rubrics a,b` | run only these rubrics, in this order |
+| `--profile NAME` | `formal-conjectures`, or `default` for none. Default: the config's, else `formal-conjectures` when the PR's base has `FormalConjecturesUtil/` |
+| `--full-checks N` | formal-conjectures: how many main statements get the full three-session review (default 6); the rest get the cheaper variant review |
+| `--reviewer claude,codex` | restrict the reviewers. By default each rubric goes to one of the installed `claude` and `codex`, chosen at random |
+| `--claude-model` | exact Claude model id; default `claude-opus-5-5` |
+| `--codex-model` | exact Codex model id; default `gpt-6.1-sol` |
+| `--repo owner/name` | default: the repository the current directory is a clone of |
+| `--no-mathlib` | don't fetch the Mathlib source. Faster, but `reuse` and `naming` can't grep it |
+| `--no-sources` | don't fetch the sources the PR cites |
+| `--halt` / `--no-halt` | whether a `block` stops the remaining rubrics. Core mode runs them all by default; scoreboard mode stops, and a later run picks up the rest |
+| `--rerun-all` | scoreboard mode: re-run every rubric, including those already approved at this head |
+| `--config PATH` | use a local `.lean-review.toml` instead of the one on the PR's base branch |
+| `--keep` | keep the temporary workspace, and print its path |
+
+lean-review runs the first `claude` or `codex` on PATH, and reads each login from where the CLI
+keeps it (`$CLAUDE_CONFIG_DIR` or `$CODEX_HOME` when set, else `~/.claude` or `~/.codex`). Private
+repositories work if the `gh` login can read them. Each reviewer's throwaway HOME is under
+`~/.lean-review-rev/` and is removed when that reviewer finishes.
 
 ---
 

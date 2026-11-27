@@ -18,6 +18,10 @@ The statement is the product, so most of the review effort goes into catching mi
 | `documentation` | once | 1 | no |
 | `proof-quality` | once | 1 | no |
 
+Rows of the review name their statement, e.g. `faithfulness · erdos_406`. A PR with 1 main
+statement and 3 variants costs 3 + 2 + 6 = 11 sessions. `--full-checks 0` gives every statement
+the cheaper two-session review.
+
 A **main statement** is a changed theorem tagged `research open` or `research solved` whose name
 has no `.variants.` segment (so `.parts.i` and `.lower_bound` count). It is **changed** if the PR
 writes one of its lines, or edits a definition in the same file that it uses.
@@ -52,10 +56,24 @@ Variants get only steps 1 and 3 (the round trip): the cheapest strong setup in t
 
 ## Checking against the source
 
-The profile sets `sources = true`, so the runner fetches the sources the PR cites into
-`.lean-review-sources/` before the review (`lean_review/sources.py`): erdosproblems.com pages with
-their entry in the erdosproblems database, arXiv papers as TeX, the latest Kourovka Notebook for
-`Kourovka/` files, OEIS entries and Wikipedia wikitext. The adjudication quotes the source's
+Reviewers have no network access, so they cannot open the sources a PR cites. The profile sets
+`sources = true`, so the runner fetches them into `.lean-review-sources/` before the review
+(`lean_review/sources.py`), with an `INDEX.md` listing what was fetched and what failed:
+
+| cited as | fetched |
+|---|---|
+| `erdosproblems.com/N`, or a file `ErdosProblems/N.lean` | the problem page as text, plus its entry (status, prize, tags) in the [erdosproblems database](https://github.com/teorth/erdosproblems) |
+| an arXiv link or `arXiv:ID`, or a file under `Arxiv/ID/` | the paper's TeX source, else arXiv's HTML rendering |
+| a file under `Kourovka/` | the latest Kourovka Notebook (arXiv 1401.0300) as TeX |
+| `oeis.org/AN`, or a file `OEIS/N.lean` | the OEIS entry in its text format |
+| `en.wikipedia.org/wiki/TITLE` | the article's wikitext |
+
+Citations are looked for in the changed files and the PR description, up to 8 sources. The runner
+never requests a URL written in the PR: it keeps only the identifier and builds the URL on the
+site's own host. A source that fails to download is listed in `INDEX.md`, and reviewers are told
+to say when they could not check against it. `--no-sources` turns fetching off.
+
+The adjudication quotes the source's
 passage and compares the docstring with it before comparing the Lean, so a docstring that already
 departs from its source is caught, not inherited by both blind steps. `metadata` takes the status
 from the source (the database's `status` for Erdős problems; `\zv` and the Archive for Kourovka),
