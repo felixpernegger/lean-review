@@ -24,3 +24,7 @@ packages = ["lean_review"]
 [tool.setuptools.package-data]
 lean_review = ["rubrics/*.md", "rubrics/references/*.md", "profiles/*/*.toml",
                "profiles/*/*.md", "profiles/*/*/*.md"]
+
+# The folder READMEs are for repository readers; nothing loads them at run time.
+[tool.setuptools.exclude-package-data]
+lean_review = ["rubrics/README.md", "profiles/*/README.md"]
