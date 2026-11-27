@@ -32,11 +32,10 @@ def parse_args(argv):
     ap.add_argument("--full-checks", type=int, metavar="N",
                     help="most main statements given the full per-statement review (default: "
                          "the profile's; the rest get the cheaper variant review)")
-    ap.add_argument("--reviewer", help="comma-separated subset of claude,codex,kiro "
-                                       "(default: every installed one of claude,codex)")
+    ap.add_argument("--reviewer", help="comma-separated subset of claude,codex "
+                                       "(default: every installed one)")
     ap.add_argument("--claude-model", default=reviewers.DEFAULT_MODELS["claude"])
     ap.add_argument("--codex-model", default=reviewers.DEFAULT_MODELS["codex"])
-    ap.add_argument("--kiro-model", default=reviewers.DEFAULT_MODELS["kiro"])
     ap.add_argument("--no-mathlib", action="store_true", help="skip the Mathlib source checkout")
     ap.add_argument("--no-sources", action="store_true",
                     help="do not fetch the sources the PR cites (on by default in the "
@@ -60,14 +59,13 @@ def parse_args(argv):
 
 def pick_providers(arg):
     have = reviewers.available()
-    wanted = [p.strip() for p in arg.split(",") if p.strip()] if arg else list(reviewers.AUTO_PROVIDERS)
+    wanted = [p.strip() for p in arg.split(",") if p.strip()] if arg else list(reviewers.PROVIDERS)
     unknown = set(wanted) - set(reviewers.PROVIDERS)
     if unknown:
         die(f"unknown reviewer(s): {', '.join(sorted(unknown))}")
     chosen = [p for p in wanted if p in have]
     if not chosen:
-        die("no reviewer CLI found on PATH: install and log into `claude` (Claude Code) or `codex`"
-            " (or pass --reviewer kiro with `kiro-cli`)")
+        die("no reviewer CLI found on PATH: install and log into `claude` (Claude Code) or `codex`")
     missing = [p for p in wanted if p not in have]
     if arg and missing:
         die(f"requested reviewer(s) not on PATH: {', '.join(missing)}")
@@ -191,12 +189,7 @@ def main(argv=None):
         if not shutil.which(tool):
             die(f"`{tool}` not found on PATH")
     providers = pick_providers(a.reviewer)
-    models = {"claude": a.claude_model, "codex": a.codex_model, "kiro": a.kiro_model}
-    if "kiro" in providers:
-        try:
-            reviewers.exact_kiro_model(a.kiro_model)
-        except ValueError as e:
-            die(str(e))
+    models = {"claude": a.claude_model, "codex": a.codex_model}
     repo = a.repo
     if not repo:
         r = subprocess.run(["gh", "repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"],

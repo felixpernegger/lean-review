@@ -1,7 +1,7 @@
 [project]
 name = "lean-review"
 version = "0.3.0"
-description = "AI review of Lean 4 pull requests on your own Claude / Codex / Kiro subscription."
+description = "AI review of Lean 4 pull requests on your own Claude or Codex subscription."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Apache-2.0" }

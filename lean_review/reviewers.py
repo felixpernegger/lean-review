@@ -1,4 +1,4 @@
-"""Reviewer CLIs (claude, codex, kiro) on the operator's logged-in subscription, and the prompt
+"""Reviewer CLIs (claude, codex) on the operator's logged-in subscription, and the prompt
 they are given.
 
 Each reviewer runs in a clean room: a throwaway HOME seeded with ONLY that provider's login
@@ -8,17 +8,12 @@ the other providers' credentials or a GitHub token. Tools are read-only: no shel
 web. No API key is ever used.
 """
 
-import functools, json, os, pathlib, re, secrets, shutil, sqlite3, subprocess, sys, tempfile, time
-from contextlib import closing
-from urllib.parse import quote
+import functools, json, os, re, secrets, shutil, subprocess, sys, tempfile, time
 
 from .config import RUBRICS_DIR, render_template
 
-PROVIDERS = ("claude", "codex", "kiro")
-# Auto-drawn when no --reviewer is given; kiro needs an exact model and is explicit-only.
-AUTO_PROVIDERS = ("claude", "codex")
-CLI = {"claude": "claude", "codex": "codex", "kiro": "kiro-cli"}
-DEFAULT_MODELS = {"claude": "claude-opus-5-5", "codex": "gpt-6.1-sol", "kiro": "gpt-5.6-sol"}
+PROVIDERS = ("claude", "codex")
+DEFAULT_MODELS = {"claude": "claude-opus-5-5", "codex": "gpt-6.1-sol"}
 
 # Each reviewer subprocess runs in a throwaway HOME under here (not /tmp: codex refuses to create
 # helper binaries when CODEX_HOME is in /tmp). One empty dir per attempt, removed when the reviewer
@@ -33,7 +28,6 @@ RUBRIC_REFERENCES = {"naming": ["references/naming-conventions.md"]}
 # The claude reviewer's whole tool set. `--tools` restricts the built-in set (without it Bash stays
 # available); `--allowedTools` stops the remaining three from prompting.
 REVIEW_TOOLS = ("Read", "Grep", "Glob")
-KIRO_TOOLS = "read,grep,glob"
 
 
 def sh(cmd, cwd=None, env=None, stdin_text=None):
@@ -43,7 +37,7 @@ def sh(cmd, cwd=None, env=None, stdin_text=None):
 
 
 def available():
-    return [p for p in PROVIDERS if shutil.which(CLI[p])]
+    return [p for p in PROVIDERS if shutil.which(p)]
 
 
 def cleanup_rev_home(home):
@@ -70,49 +64,6 @@ def sweep_rev_homes(max_age_s=REV_HOME_MAX_AGE_S):
                 shutil.rmtree(p, ignore_errors=True)
         except OSError:
             pass
-
-
-def _kiro_auth_db():
-    """Kiro's browser-login database (it lives outside KIRO_HOME)."""
-    if sys.platform == "darwin":
-        base = pathlib.Path(os.path.expanduser("~/Library/Application Support"))
-    elif os.environ.get("XDG_DATA_HOME"):
-        base = pathlib.Path(os.environ["XDG_DATA_HOME"])
-    else:
-        base = pathlib.Path(os.path.expanduser("~/.local/share"))
-    return base / "kiro-cli" / "data.sqlite3"
-
-
-def _kiro_data_dir(home):
-    home = pathlib.Path(home)
-    if sys.platform == "darwin":
-        return home / "Library" / "Application Support" / "kiro-cli"
-    return home / ".local" / "share" / "kiro-cli"
-
-
-def _copy_kiro_auth_db(src, dst):
-    """Snapshot the live SQLite credential store without losing WAL state."""
-    src, dst = pathlib.Path(src), pathlib.Path(dst)
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    dst.unlink(missing_ok=True)
-    try:
-        dst.touch(mode=0o600)
-        with closing(sqlite3.connect("file:" + quote(str(src.resolve())) + "?mode=ro", uri=True)) as source:
-            with closing(sqlite3.connect(dst)) as target:
-                source.backup(target)
-        os.chmod(dst, 0o600)
-    except (OSError, sqlite3.Error):
-        dst.unlink(missing_ok=True)
-        raise
-
-
-def exact_kiro_model(model):
-    """Return a non-Auto Kiro model id or reject the dispatch: Kiro's auto router could silently
-    pick a weaker model."""
-    model = (model or "").strip()
-    if not model or model.lower().startswith("auto"):
-        raise ValueError(f"Kiro needs an exact model id, not the Auto router: {model!r}")
-    return model
 
 
 # One unguessable token per lean-review process. Claude Code writes paths under HOME into its system
@@ -169,13 +120,6 @@ def reviewer_env(provider):
                 env["CLAUDE_CONFIG_DIR"] = configured
             print(f"note: no {src} (keychain login?); claude runs with your real login, so "
                   "personal settings may influence the review", file=sys.stderr)
-    elif provider == "kiro":
-        env["KIRO_HOME"] = os.path.join(home, ".kiro")
-        if sys.platform != "darwin":
-            env["XDG_DATA_HOME"] = os.path.join(home, ".local", "share")
-        src = _kiro_auth_db()
-        if src.exists():
-            _copy_kiro_auth_db(src, _kiro_data_dir(home) / "data.sqlite3")
     elif provider == "codex":
         codex_home = os.path.join(home, ".codex")
         os.makedirs(codex_home, exist_ok=True)  # codex requires CODEX_HOME to already exist
@@ -223,8 +167,8 @@ class ReviewPrompt(str):
     request) and `rubric` is the rest. run_claude sends them as two content blocks with a cache
     breakpoint after the first, so each rubric after the first reads the pull request from the
     prompt cache instead of paying to write it again. A prefix is cached only up to a breakpoint,
-    so putting the shared part first in a single block would not be enough. Codex and kiro get the
-    same text in the same order as one string."""
+    so putting the shared part first in a single block would not be enough. Codex gets the same
+    text in the same order as one string."""
 
     def __new__(cls, shared, rubric):
         self = super().__new__(cls, shared + rubric)
@@ -422,19 +366,7 @@ def run_codex(prompt, cwd, model, env):
     return out
 
 
-def run_kiro(prompt, cwd, model, env):
-    """One exact Kiro model with read-only filesystem tools; the prompt travels on stdin."""
-    cmd = ["kiro-cli", "chat", "--no-interactive", f"--trust-tools={KIRO_TOOLS}",
-           "--model", exact_kiro_model(model), "--effort", "high",
-           "Follow the complete review instructions and context supplied on standard input."]
-    r = sh(cmd, cwd=cwd, env=env, stdin_text=prompt)
-    out = {"returncode": r.returncode, "text": r.stdout, "raw_stderr": r.stderr[-3000:]}
-    if r.returncode != 0 or not r.stdout.strip():
-        out["raw_stdout"] = r.stdout[-3000:]
-    return out
-
-
-RUNNERS = {"claude": run_claude, "codex": run_codex, "kiro": run_kiro}
+RUNNERS = {"claude": run_claude, "codex": run_codex}
 
 # Why a run produced no verdict, as a closed vocabulary; the first match wins.
 _ERROR_KINDS = (

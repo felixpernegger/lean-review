@@ -1,6 +1,6 @@
 # lean-review
 
-AI review of Lean 4 pull requests, run from your own machine on the Claude, Codex or Kiro
+AI review of Lean 4 pull requests, run from your own machine on the Claude or Codex
 subscription you are already logged into. It needs no API keys, GitHub App or server.
 
 A PR is reviewed once per *rubric*: correctness, reuse, attribution, API design, generality,
@@ -18,9 +18,8 @@ You need:
 - Python 3.11 or newer, and git
 - the GitHub CLI `gh`, logged in (`gh auth login`)
 - at least one reviewer CLI, logged in to a subscription:
-  [`claude`](https://docs.anthropic.com/en/docs/claude-code) (Claude Code 2.1.280 or newer),
-  [`codex`](https://www.npmjs.com/package/@openai/codex), or `kiro-cli` (used only with
-  `--reviewer kiro`)
+  [`claude`](https://docs.anthropic.com/en/docs/claude-code) (Claude Code 2.1.280 or newer) or
+  [`codex`](https://www.npmjs.com/package/@openai/codex)
 
 ```bash
 uv tool install git+https://github.com/felixpernegger/lean-review
@@ -31,9 +30,8 @@ pipx install git+https://github.com/felixpernegger/lean-review
 To run it without installing, put `uvx --from git+https://github.com/felixpernegger/lean-review`
 in front of any `lean-review` command.
 
-lean-review runs the first `claude`, `codex` or `kiro-cli` on your PATH, and reads each login from
-where the CLI keeps it (`$CLAUDE_CONFIG_DIR` or `$CODEX_HOME` when set, else `~/.claude` or
-`~/.codex`). Private repositories work if your `gh` login can read them.
+lean-review runs the first `claude` or `codex` on your PATH, and reads each login from where the
+CLI keeps it (`$CLAUDE_CONFIG_DIR` or `$CODEX_HOME` when set, else `~/.claude` or `~/.codex`). Private repositories work if your `gh` login can read them.
 
 ## Usage
 
@@ -62,10 +60,9 @@ Rubric names for `--rubrics`: `correctness`, `reuse`, `attribution`, `api-design
 | `--rubrics a,b` | run only these rubrics, in this order |
 | `--profile NAME` | `formal-conjectures`, or `default` for none. Default: the config's, else `formal-conjectures` when the PR's base has `FormalConjecturesUtil/` |
 | `--full-checks N` | formal-conjectures: how many main statements get the full three-session review (default 6); the rest get the cheaper variant review |
-| `--reviewer claude,codex,kiro` | restrict the reviewers. By default each rubric goes to one of the installed `claude` and `codex`, chosen at random |
+| `--reviewer claude,codex` | restrict the reviewers. By default each rubric goes to one of the installed `claude` and `codex`, chosen at random |
 | `--claude-model` | exact Claude model id; default `claude-opus-5-5` |
 | `--codex-model` | exact Codex model id; default `gpt-6.1-sol` |
-| `--kiro-model` | exact Kiro model id; default `gpt-5.6-sol`. `auto` is refused |
 | `--repo owner/name` | default: the repository the current directory is a clone of |
 | `--no-mathlib` | don't fetch the Mathlib source. Faster, but `reuse` and `naming` can't grep it |
 | `--no-sources` | don't fetch the sources the PR cites (see [Sources](#sources)) |
@@ -245,7 +242,7 @@ The PR is treated as attacker-controlled, and any reviewer may have been prompt-
 
 - Each reviewer runs in a throwaway HOME holding only its own subscription login. Your
   `CLAUDE.md`, settings, skills, MCP servers and other credentials never reach it.
-- Reviewers have read-only tools. claude and kiro get read, grep and glob: no shell, no writes, no
+- Reviewers have read-only tools. claude gets read, grep and glob: no shell, no writes, no
   web. codex runs in its `read-only` sandbox.
 - The verdict is read only from after a fresh random marker, so a ready-made
   `{"verdict": "approve"}` planted in the PR is ignored.

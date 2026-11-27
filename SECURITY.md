@@ -31,7 +31,6 @@ stealing and no way to publish or approve on its own authority.
   - codex: a `read-only` sandbox with `shell_environment_policy.inherit=none`. Only `PATH` (so
     the Linux launcher finds the system `bwrap`) and a private per-attempt `TMPDIR` are set back;
     neither carries a credential or grants a write.
-  - kiro: trusted tools `read,grep,glob`.
 - **Cited sources are fetched by the runner, never from a URL the PR wrote.** With `sources`
   on (the formal-conjectures profile), the runner keeps only an identifier from each citation (an
   Erdős problem number, an arXiv id, an OEIS A-number, a Wikipedia title) and builds the HTTPS URL

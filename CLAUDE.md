@@ -13,7 +13,7 @@ Never pass `--post` unless the user explicitly asked to publish.
 | `lean_review/config.py` | `.lean-review.toml` and overlays, read from the base commit; `{{placeholder}}` and `<!-- if key -->` templating |
 | `lean_review/workspace.py` | PR metadata, the checkout at head (no `.git`, escaping symlinks removed), Mathlib at the base-pinned rev, the shared prompt context |
 | `lean_review/pr_diff.py` | three-dot diff via a bounded, credential-free bare git fetch |
-| `lean_review/reviewers.py` | claude/codex/kiro runners, clean-room HOME, prompt assembly (rubrics and blind stages), error classification |
+| `lean_review/reviewers.py` | claude/codex runners, clean-room HOME, prompt assembly (rubrics and blind stages), error classification |
 | `lean_review/engine.py` | the rubric loop: retry, reviewer fallback, halt on block, blind stages before a per-statement unit |
 | `lean_review/sources.py` | the sources a PR cites: recognised by pattern, fetched from URLs built on fixed hosts, staged with an `INDEX.md` |
 | `lean_review/statements.py` | changed declarations from the diff, per-statement units (`rubric:target`), junk-value hints |
@@ -39,8 +39,7 @@ The live smoke test uses the user's subscription, so ask before running it.
 Tests cover most of these. Keep them that way.
 
 - **Reviewer isolation.**
-  - Read-only tools only: claude `--tools Read Grep Glob`, codex `-s read-only`, kiro
-    `--trust-tools=read,grep,glob`.
+  - Read-only tools only: claude `--tools Read Grep Glob`, codex `-s read-only`.
   - A throwaway HOME holding only that provider's login. Claude's is one path per process,
     wiped before and after each attempt, so the prompt cache keeps working.
   - No API keys, and no `GH_TOKEN` or `gh` credential, in a reviewer's environment.

@@ -81,14 +81,6 @@ def test_codex_read_only(monkeypatch):
     assert cmd[cmd.index("-s") + 1] == "read-only" and "-m" not in cmd
 
 
-def test_kiro_needs_exact_model():
-    for bad in ("", "auto", "Auto-router"):
-        with pytest.raises(ValueError):
-            reviewers.exact_kiro_model(bad)
-    assert reviewers.exact_kiro_model(" gpt-5.6-sol ") == "gpt-5.6-sol"
-    assert reviewers.KIRO_TOOLS == "read,grep,glob"
-
-
 def test_error_kind_ignores_model_prose():
     talk = {"returncode": 0, "text": "the handler returns 401 when not logged in"}
     assert reviewers.error_kind(talk) == "no_verdict"

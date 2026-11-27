@@ -30,9 +30,9 @@ def test_halt_defaults_by_mode():
 
 
 def test_pick_providers(monkeypatch):
-    monkeypatch.setattr(reviewers, "available", lambda: ["claude", "kiro"])
-    assert cli.pick_providers(None) == ["claude"]             # kiro is never auto-drawn
-    assert cli.pick_providers("kiro") == ["kiro"]
+    monkeypatch.setattr(reviewers, "available", lambda: ["claude"])
+    assert cli.pick_providers(None) == ["claude"]
+    assert cli.pick_providers("claude") == ["claude"]
     with pytest.raises(SystemExit):
         cli.pick_providers("codex")
     with pytest.raises(SystemExit):
