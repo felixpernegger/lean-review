@@ -1,2 +1,0 @@
-[console_scripts]
-lean-review = lean_review.cli:main
