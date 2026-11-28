@@ -3,7 +3,7 @@
 Does the PR credit the mathematical sources it follows? Uses `request_changes`, and may `block`
 when required credit is clearly absent.
 
-- Credit sources proactively: the paper, textbook, blueprint, notes, or Zulip discussion the work
+- Credit sources proactively: the paper, textbook, blueprint, notes the work
   follows.
 - Check the diff against its stated sources, and watch for laundering: similarity in theorem
   order, notation, or proof plan to an identifiable source is enough to require credit, even
