@@ -23,7 +23,7 @@ block-capable integrity angles run first (cheapest, most-likely-to-block earlies
 | --- | --- | --- |
 | [`correctness`](correctness.md) | Do the statements and definitions say what they should? | yes |
 | [`reuse`](reuse.md) | Does it reuse Mathlib and the project instead of reinventing? | yes (outright duplication) |
-| [`attribution`](attribution.md) | Does it credit its formal and informal sources? | yes (clear missing credit) |
+| [`attribution`](attribution.md) | Does it credit the mathematical sources it follows? | yes (clear missing credit) |
 | [`api-design`](api-design.md) | Minimal public surface, complete characteristic API? | no |
 | [`generality`](generality.md) | Weakest assumptions; natural level? | no |
 | [`placement`](placement.md) | Canonical home; direct, minimal imports? | no |

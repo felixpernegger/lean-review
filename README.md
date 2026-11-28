@@ -20,7 +20,7 @@ cannot:
 |---|---|---|
 | `correctness` | Do the definitions and statements say what they are meant to? Looks for misformalizations, vacuous statements and content moved into the hypotheses. | yes |
 | `reuse` | Does anything duplicate Mathlib or the project itself instead of using what is there? | yes, on a direct duplicate |
-| `attribution` | Are the papers, formalizations and Mathlib PRs the work follows credited? | yes, when credit is clearly missing |
+| `attribution` | Are the papers and notes the work follows credited? | yes, when credit is clearly missing |
 | `api-design` | Is the public interface minimal, and does each new definition come with the lemmas needed to use it? | no |
 | `generality` | Are statements at their natural level: no unused or over-strong assumptions, no abstraction without a use? | no |
 | `placement` | Is each declaration in the right file, with sensible imports? | no |
